@@ -17,10 +17,10 @@ export default function HomePage() {
     // only a min-height, so `min-h-full` collapses here and lets the footer ride
     // up under short content. Growing to fill the body pins it to the bottom.
     <div className="flex flex-1 flex-col">
-      <header className="border-b bg-card">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+      <header className="border-b border-primary/10 bg-card/90 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
           <div className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-accent">
               <Activity className="size-4" aria-hidden />
             </span>
             <div className="leading-tight">
@@ -29,23 +29,25 @@ export default function HomePage() {
             </div>
           </div>
 
-          <p className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+          <p className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium text-secondary-foreground">
             <ShieldCheck className="size-3.5" aria-hidden />
-            Processed on the server · nothing is stored
+            <span className="sm:hidden">Private processing</span>
+            <span className="hidden sm:inline">Processed privately · files aren’t stored</span>
           </p>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
-        <div className="mb-8 max-w-2xl space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-            Understand a laboratory report in one upload
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-7 sm:px-6 sm:py-10">
+        <div className="mb-7 max-w-2xl space-y-2 sm:mb-8">
+          <p className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
+            Lab intelligence
+          </p>
+          <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+            Your lab report, made clear
           </h1>
-          <p className="text-sm text-muted-foreground sm:text-base">
-            Upload the pages of one report — PDFs, photos or screenshots. Every
-            biomarker is extracted, translated into standardized English names and
-            units, and classified strictly against the ranges the report itself
-            prints.
+          <p className="max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+            Upload a PDF or images. We’ll organize every biomarker, standardize its
+            name and unit, and compare it with the ranges printed by your lab.
           </p>
         </div>
 
@@ -55,9 +57,9 @@ export default function HomePage() {
         />
       </main>
 
-      <footer className="border-t bg-card">
+      <footer className="border-t border-primary/10 bg-card/70">
         <div className="mx-auto max-w-6xl px-4 py-5 text-xs text-muted-foreground sm:px-6">
-          Informational tool only. Not a medical device and not medical advice.
+          Axo Longevity · Lab Report Analyzer
         </div>
       </footer>
     </div>
