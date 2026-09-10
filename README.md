@@ -1,222 +1,38 @@
 # Lab Report Analyzer
 
-A single-page web tool that turns a laboratory PDF report into a structured,
-standardized, classified list of biomarkers.
+Upload a laboratory report — a PDF, photos, or screenshots — and get every biomarker extracted, standardized into English names and units, and classified against the reference ranges printed on that report.
 
-Upload the pages of one report — text PDFs, photos or screenshots, up to eight
-files at once — and the app extracts every result it can find, translates the
-biomarker names and units into a consistent English vocabulary, and labels each
-result as **optimal**, **normal**, **out of range** or **needs review** — using
-nothing but the patient facts and the ranges that are printed on that report.
+Built as a technical challenge implementation for **Axo Longevity**.
 
-Built for the Axo Longevity technical challenge.
+## Overview
 
----
+Laboratory reports are dense, multi-column documents, often not in English, and every lab formats them differently. Reading one means manually matching each value to its unit and its reference range, then working out whether it sits inside that range.
 
-## Table of contents
+This app does that mechanically. The user uploads the pages of one report, the server extracts the printed facts, and the app classifies each result **using only the ranges the report itself prints**. No thresholds, targets, or interpretations are added.
 
-- [Challenge interpretation](#challenge-interpretation)
-- [Supported formats and limits](#supported-formats-and-limits)
-- [Features and user flow](#features-and-user-flow)
-- [Architecture and data flow](#architecture-and-data-flow)
-- [Local setup](#local-setup)
-- [Environment variables](#environment-variables)
-- [AI provider modes](#ai-provider-modes)
-- [PDF processing and the structured schema](#pdf-processing-and-the-structured-schema)
-- [Image processing and why not Tesseract.js](#image-processing-and-why-not-tesseractjs)
-- [Normalization and classification rules](#normalization-and-classification-rules)
-- [Error handling](#error-handling)
-- [Privacy and security](#privacy-and-security)
-- [Manual QA checklist](#manual-qa-checklist)
-- [Limitations and tradeoffs](#limitations-and-tradeoffs)
-- [Production architecture on AWS](#production-architecture-on-aws)
+The core design decision is where the AI stops. An AI model transcribes the document; all normalization and classification happen deterministically in TypeScript. The same report always produces the same statuses, and every status can be explained in one sentence. See [AI extraction vs. deterministic logic](#ai-extraction-vs-deterministic-logic).
 
----
+**Stack:** Next.js 16 (App Router), TypeScript (strict), Tailwind CSS v4, shadcn/ui + Radix, lucide-react, Zod, `pdfjs-dist`, `sharp`.
 
-## Challenge interpretation
+## Features
 
-The brief asks for an AI-powered lab report analyzer. The interesting question is
-not "can an LLM read a PDF" — it is **where the boundary between the model and the
-application sits** when the output is health information.
+- Upload PDFs, JPEG, PNG or WebP — up to 8 files, treated as the ordered pages of **one report for one patient**
+- Server-side PDF text extraction with `pdfjs-dist`, rebuilding visual rows so column relationships survive
+- Image normalization with `sharp`: EXIF orientation applied, all metadata stripped, longest side capped at 2400px
+- Multimodal AI extraction — PDF text and images sent as one ordered message when the configured model supports images
+- Strict JSON-schema response format, validated with Zod before anything is used
+- Biomarker name standardization (Spanish/English → English) via a curated dictionary, with the model's translation as fallback
+- Unit standardization with a conversion factor applied to the value *and* its ranges together
+- Patient extraction (age or date of birth, sex, lab, report date, report ID) and reference/optimal range extraction
+- Deterministic classification into `optimal`, `normal`, `out_of_range`, `needs_review`
+- Results view with summary counts that double as filters, text search, an empty state, and a per-biomarker detail sheet
+- Responsive: a table on wide screens, full-width touch rows below `lg`
+- Mock/demo mode that runs the whole pipeline without an API key or credits
+- Typed error codes end to end, each with a specific message and next step
 
-The line drawn here:
+## Quick start
 
-| Concern | Owner | Why |
-| --- | --- | --- |
-| Reading text out of the PDF | `pdfjs-dist`, deterministic | No inference needed |
-| Transcribing what is printed (names, values, units, ranges) | AI provider | Layout and language vary too much for regex |
-| Translating biomarker names | Curated dictionary first, model second | Auditable and stable across runs |
-| Standardizing units | Deterministic table in TypeScript | A conversion factor is not a judgement call |
-| Deriving age from a date of birth | Deterministic | Arithmetic, not inference |
-| **Deciding optimal / normal / out of range** | **Deterministic** | **A status is a claim about someone's health** |
-
-The model is a transcription tool. It never returns a status, never converts a
-unit, and never supplies a threshold. It is not even asked to. Everything a user
-sees as a verdict is computed in `src/lib/domain/classify.ts` from facts the
-report itself printed, which means the same report always produces the same
-statuses and every status can be explained in one sentence.
-
-A consequence worth stating up front: **this app never adds medical knowledge**.
-If a report prints no reference range for a biomarker, the result is
-`needs_review` — not "probably fine".
-
----
-
-## Supported formats and limits
-
-| | |
-| --- | --- |
-| Formats | **PDF**, **JPEG/JPG**, **PNG**, **WebP** |
-| Files per analysis | **8** |
-| Per file | **10 MB** (`MAX_UPLOAD_SIZE_MB`) |
-| Combined, before normalization | **30 MB** |
-| Patients per analysis | **1** |
-
-All files in one analysis are treated as **ordered parts of a single report for a
-single patient**, in the order the user arranged them.
-
-**Deliberately not supported:** HEIC, SVG, GIF, DOCX, and multiple patients in
-one analysis. HEIC needs a decoder most browsers do not ship; SVG is an
-executable document format and a real XSS/SSRF vector, so accepting one from an
-untrusted user to feed a model would be careless; GIF and DOCX are not laboratory
-report formats. Limits and formats live in
-[`src/lib/upload/formats.ts`](src/lib/upload/formats.ts) and are enforced on the
-server — the client checks are only for fast feedback.
-
----
-
-## Features and user flow
-
-**1. Upload** — drag-and-drop or file picker, both accepting **multiple files at
-once**, with the formats and all three limits stated up front and an explicit
-note that everything selected is treated as one report.
-
-**2. Selected files** — an ordered list. Each row shows its position ("Part 3"),
-file name, size and format badge, with a per-file remove. *Add more* **appends**
-to the selection rather than replacing it, exact duplicates (same name, size and
-type) are silently skipped, *Remove all* clears everything, and the running total
-is shown against the 30 MB limit. Nothing is uploaded until *Analyze report*.
-
-**3. Processing** — five format-neutral stages that mirror what the server
-actually does: validating files, reading report, extracting biomarkers,
-classifying results, preparing results. The client cannot observe server-side
-progress, so transitions are time-based estimates and the last stage stays busy
-until the response arrives. No stage is ever reported as complete based on a
-guess.
-
-**4. Results**
-- Report summary: patient age (with a note when it was derived from a date of
-  birth), sex, laboratory, report date, and a **sources** breakdown — how many
-  files were analysed, how many PDF pages, how many images — plus the report id
-  and detected language.
-- Five count cards: total, optimal, normal, out of range, needs review.
-- A searchable, status-filterable biomarker table showing the standardized name
-  with the original name underneath, the result in the standardized unit, the
-  reference range, and a status badge.
-- A detail Sheet per biomarker: the value, why it got its status in plain
-  language, everything as printed on the report, all reference and optimal
-  ranges with the applied one marked, transcription confidence, source page and
-  any report footnotes.
-- *Analyze another report* to start over.
-- A medical disclaimer that is always visible.
-
-**5. Errors** — every failure is a typed code with a human title, an explanation
-and a next step. See [Error handling](#error-handling).
-
----
-
-## Architecture and data flow
-
-```
-Browser                        Server (Route Handler)                Provider
-───────                        ──────────────────────                ────────
- select 1..8 files
- POST multipart  ───────────▶  validateUploads()
-   files, files, files           count · combined size · duplicates
-                                 per file: extension · MIME
-                                 · size · magic bytes
-                               buildReportInputs()   (order preserved)
-                                 PDF   -> extractPdfText()  local, pdfjs
-                                 image -> normalizeImage()  sharp
-                               provider.supportsImages gate
-                               getAiProvider()  ─────────────────────▶ one ordered
-                                                                       multimodal
-                                                                       message
-                               RawExtractionSchema.parse()  ◀───────── structured JSON
-                               conflictingSources / empty guards
-                               analyzeExtraction()
-                                 name + unit standardization
-                                 age derivation
-                                 classification
- render results  ◀───────────  AnalyzeResponse (JSON)
-```
-
-Nothing on this path is written to disk, a database, a cache or a log.
-
-### Project layout
-
-```
-src/
-├── app/
-│   ├── api/analyze/route.ts        POST /api/analyze — the only server entry point
-│   ├── page.tsx                    Server component shell
-│   └── globals.css                 Design tokens (palette + status colours)
-├── components/
-│   ├── analyzer/                   Feature components (client)
-│   └── ui/                         shadcn/ui primitives
-└── lib/
-    ├── ai/                         Provider abstraction (server only)
-    │   ├── types.ts                AiProvider interface
-    │   ├── provider.ts             Environment-driven factory
-    │   ├── disabled.ts             Safe default
-    │   ├── mock.ts                 Demo provider
-    │   ├── openai-compatible.ts    Live provider
-    │   ├── prompt.ts               System prompt + JSON schema
-    │   └── fixtures/               Sample extraction for demo mode
-    ├── domain/                     Pure, deterministic, framework-free
-    │   ├── schemas.ts              Zod contracts + domain types
-    │   ├── classify.ts             The classification engine
-    │   ├── units.ts                Unit standardization table
-    │   ├── biomarker-names.ts      Name dictionary
-    │   ├── analyze.ts              Orchestration
-    │   └── errors.ts               Typed error codes
-    ├── pdf/
-    │   └── extract.ts              pdfjs text extraction (server only)
-    ├── upload/                     Multi-file intake
-    │   ├── formats.ts              Formats + limits (shared with the client)
-    │   ├── validate.ts             Per-file and whole-selection validation
-    │   ├── normalize-image.ts      EXIF, metadata stripping, resize, data URL
-    │   └── report-input.ts         The ordered `ReportInput` union
-    ├── config.ts                   Validated server environment (server only)
-    ├── api-types.ts                Shared request/response contract
-    └── status-presentation.ts      Status → label/colour, shared by all views
-```
-
-**Server/client separation.** Every module that can touch secrets, the filesystem
-or the provider imports `server-only`, so importing one from a client component
-is a build error rather than a leak. The client and the server share exactly two
-things: the response type in `api-types.ts` and the pure domain types.
-
-### Key decisions
-
-- **Two schema layers.** `RawExtraction*` is what a provider may return: pure
-  transcription. `Analysis*` is what the app computes from it. The model cannot
-  influence a status except through the facts it transcribed.
-- **Providers are interchangeable and never implicit.** `AiProvider` has one
-  method. There is no fallback path anywhere: a missing key produces
-  `AI_NOT_CONFIGURED`, a broken live provider produces `AI_MISCONFIGURED`.
-  Silently serving fixture data as if it were a real analysis would be the single
-  most dangerous bug this app could have.
-- **Typed errors end to end.** One `AppError` type with a fixed code union, one
-  response shape, one presentation map in the UI.
-- **No persistence layer at all**, rather than a persistence layer that is
-  configured to delete things.
-
----
-
-## Local setup
-
-Requirements: Node.js 20+ and npm.
+Requires Node.js 20+.
 
 ```bash
 npm install
@@ -226,800 +42,167 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-`.env.example` is preconfigured for OpenRouter and ships with `AI_API_KEY`
-deliberately empty, so after copying it you only need to add your key:
+**Demo mode** — explore the full UI with no API key and no credits. It validates and prepares your files, then returns a bundled sample extraction, clearly labelled in the UI:
 
 ```bash
 # .env.local
-AI_API_KEY=sk-or-v1-...
-```
-
-`.env.local` is git-ignored and must never be committed.
-
-**No key, no credits, no problem.** To explore the whole app without spending
-anything, switch to demo mode — it returns the bundled sample extraction and
-labels itself clearly in the UI:
-
-```bash
-echo "AI_PROVIDER=mock" >> .env.local
-```
-
-Setting `AI_PROVIDER=disabled` instead makes analysis return a controlled
-`AI_NOT_CONFIGURED` error. The app installs, builds and runs in every one of the
-three modes without an API key.
-
-Other commands:
-
-```bash
-npm run lint        # ESLint
-npm run typecheck   # tsc --noEmit
-npm run build       # production build
-npm start           # serve the production build
-```
-
----
-
-## Environment variables
-
-All server-side. **Nothing here is exposed to the browser** — no variable is
-prefixed with `NEXT_PUBLIC_`, and only the derived upload limit (a number of
-megabytes) is ever sent to the client.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `AI_PROVIDER` | `disabled` | `disabled` \| `mock` \| `openai-compatible` |
-| `AI_API_KEY` | — | Bearer token. Required for `openai-compatible` |
-| `AI_BASE_URL` | — | Base URL, e.g. `https://openrouter.ai/api/v1` |
-| `AI_MODEL` | — | Model id passed straight through |
-| `AI_TEMPERATURE` | `0` | A number, or `omit` to send no temperature field |
-| `AI_TIMEOUT_MS` | `60000` | Per-request timeout |
-| `AI_MAX_RETRIES` | `1` | Retries for transport, 5xx and rate-limit failures |
-| `AI_APP_URL` | `http://localhost:3000` | Optional OpenRouter `HTTP-Referer` attribution |
-| `AI_APP_TITLE` | `Axo Lab Report Analyzer` | Optional OpenRouter `X-Title` attribution |
-| `MAX_UPLOAD_SIZE_MB` | `10` | Server-enforced upload limit |
-
-Values are validated with Zod at first use. If validation fails, only the
-offending **variable names** appear in the error — never their values.
-`.env.local` is git-ignored; `.env.example` is committed.
-
----
-
-## AI provider modes
-
-### `disabled` (default)
-
-```env
-AI_PROVIDER=disabled
-```
-
-Returns `AI_NOT_CONFIGURED`. The app is fully usable up to the analysis step,
-which makes it safe to run, build and deploy with no provider decision made.
-
-### `mock` (demo)
-
-```env
 AI_PROVIDER=mock
 ```
 
-Returns the extraction transcribed from the challenge's own sample report
-(`src/lib/ai/fixtures/sample-report.ts`). The uploaded PDF is still validated and
-its text is still extracted — only the transcription step is replaced.
+**Live provider** — any OpenAI-compatible `/chat/completions` endpoint. OpenRouter shown here:
 
-The results view shows a prominent amber **"Demo mode — these results are not
-from your file"** banner naming the provider. The fixture is parsed through
-`RawExtractionSchema` like any other provider response, so demo mode exercises
-the real contract rather than bypassing it.
-
-### `openai-compatible` (live) — configured for OpenRouter
-
-```env
+```bash
+# .env.local
 AI_PROVIDER=openai-compatible
-AI_API_KEY=sk-or-v1-...          # set in .env.local only, never committed
+AI_API_KEY=<your-key>
 AI_BASE_URL=https://openrouter.ai/api/v1
-AI_MODEL=openai/gpt-5.6-luna
-AI_TEMPERATURE=omit
+AI_MODEL=<provider/model-id>
+AI_TEMPERATURE=0
+AI_SUPPORTS_IMAGES=true
 ```
 
-Get a key at <https://openrouter.ai/keys>.
+The default (`AI_PROVIDER=disabled`) makes analysis return a controlled `AI_NOT_CONFIGURED` error, so the app installs, builds and runs with no provider configured. `.env.local` is git-ignored.
 
-#### Why this model
+Other scripts: `npm run lint`, `npm run typecheck`, `npm run build`.
 
-`openai/gpt-5.6-luna` is chosen for **extraction accuracy and reliable strict
-structured output**, not for lowest price. A laboratory report is a dense,
-multi-column, often non-English document, and this pipeline is deterministic
-downstream of the model — a mis-transcribed value becomes a confidently wrong
-classification, which is the worst failure mode this app has. Paying slightly
-more per report to reduce that risk is the right trade.
+## Supported files and limits
 
-Extended reasoning is **not** enabled: no `reasoning` or `reasoning_effort`
-parameter is sent, so the model runs at its default. This task is structured
-transcription, not multi-step problem solving.
+| | |
+| --- | --- |
+| Formats | PDF, JPEG/JPG, PNG, WebP |
+| Files per analysis | 8 (`MAX_FILES`) |
+| Per file | 10 MB (`MAX_UPLOAD_SIZE_MB`, configurable) |
+| Combined | 30 MB (`MAX_TOTAL_UPLOAD_BYTES`) |
+| Scope | One patient, one report |
 
-#### `AI_TEMPERATURE=omit` is required for this model
+Files keep the order the user selected — that order is the page order sent to the model. Every file is validated independently by extension, MIME type, byte signature and size; any invalid file rejects the whole request rather than silently analysing a partial report.
 
-`openai/gpt-5.6-luna` does not accept a `temperature` parameter. Because
-requests are sent with `provider: { require_parameters: true }`, OpenRouter only
-routes to upstream providers that honour **every** parameter in the request — so
-including an unsupported `temperature` can leave no eligible provider and fail
-the call. Determinism instead comes from `seed: 0`.
+**Scanned PDFs are not supported.** PDFs are read locally and never uploaded to the provider, so a PDF with no text layer fails with `PDF_TEXT_EXTRACTION_FAILED`. There is no OCR. The workaround, which the error message states, is to upload photos or screenshots of the pages instead — those go to the vision model as images.
 
-If you switch to a model that does support temperature (for example
-`google/gemini-2.5-flash-lite`, which is roughly half the price but a much
-smaller model), set `AI_TEMPERATURE=0`.
+## User flow
 
-#### What is sent
+1. User selects or drags one or more files; they appear as an ordered, editable list.
+2. The server validates count, combined size, duplicates, and each file's extension, MIME type, signature and size.
+3. PDFs are extracted to text page by page; images are normalized and encoded for vision input.
+4. All sources are sent to the AI provider as one ordered multimodal message.
+5. The response is parsed and validated against the Zod extraction schema; a mismatch is rejected, not partially rendered.
+6. The app standardizes biomarker names and units, and derives age from date of birth when needed.
+7. Each biomarker is classified deterministically against the report's own ranges and the patient context.
+8. Results render with summary counts, search, status filtering, and a detail sheet per biomarker.
 
-```jsonc
-POST https://openrouter.ai/api/v1/chat/completions
-Content-Type: application/json
-Authorization: Bearer ${AI_API_KEY}
-HTTP-Referer: http://localhost:3000        // optional attribution
-X-Title: Axo Lab Report Analyzer           // optional attribution
-
-{
-  "model": "openai/gpt-5.6-luna",
-  "seed": 0,
-  "messages": [ ... ],
-  "response_format": {
-    "type": "json_schema",
-    "json_schema": { "name": "lab_report_extraction", "strict": true, "schema": { ... } }
-  },
-  "provider": { "require_parameters": true }
-}
-```
-
-`provider.require_parameters` is what makes strict structured output
-trustworthy: without it OpenRouter may route to a provider that silently ignores
-`response_format` and returns prose, which would fail Zod validation and waste
-the call.
-
-The two attribution headers are **optional** — they only label the request on
-the OpenRouter dashboard, and the call succeeds without them. Point `AI_APP_URL`
-at the real origin in production.
-
-#### Portability
-
-The OpenRouter extensions (the `provider` block and the two headers) are applied
-only when `AI_BASE_URL` points at `openrouter.ai`. Every other OpenAI-compatible
-endpoint — OpenAI, Azure gateways, Groq, Together, vLLM, Ollama, a self-hosted
-gateway — receives a plain, portable request body. No second AI SDK was added;
-this is the same `OpenAiCompatibleProvider` the app already had.
-
-#### Switching back to mock mode
-
-```bash
-# .env.local
-AI_PROVIDER=mock
-```
-
-That is the only line that has to change. The mock provider returns the bundled
-sample extraction, consumes no credits, and the results view shows a prominent
-**Demo mode** banner so its output can never be mistaken for a real analysis.
-
-#### Response handling
-
-The response is treated as untrusted input: markdown fences are stripped, JSON is
-parsed defensively, the payload shape is read without assuming it, and the result
-is validated with Zod. A mismatch is `AI_INVALID_RESPONSE` — never partially
-rendered data.
-
-Adding a provider that is not OpenAI-compatible (Anthropic, Gemini native,
-Bedrock) means adding one class implementing `AiProvider` and one `case` in
-`src/lib/ai/provider.ts`. Nothing else changes.
-
-> ### ⚠️ Before uploading real patient data
->
-> Sending a report to OpenRouter sends its **full text to a third party**, and
-> OpenRouter in turn routes it to an upstream model provider. This app does not
-> store anything, but that guarantee ends at the network boundary.
->
-> Before uploading any real patient health data, review OpenRouter's privacy
-> policy, terms and data-retention settings, and the terms of whichever upstream
-> provider ends up serving the request. Check in particular whether prompts are
-> logged or used for training, and configure your account's data policy
-> accordingly. Depending on your jurisdiction you will also need a data
-> processing agreement in place.
->
-> Use demo mode (`AI_PROVIDER=mock`) for demonstrations. This app makes no
-> compliance claim of any kind — see [Privacy and security](#privacy-and-security).
-
----
-
-## PDF processing and the structured schema
-
-### Validation
-
-Four checks, cheapest first — extension, MIME type, size, then the `%PDF-` file
-signature. The first three are client-supplied and therefore untrusted; the
-signature check is the one that actually decides.
-
-### Text extraction
-
-`pdfjs-dist` (legacy build, no DOM) reads the document page by page, preserving
-page numbers so every biomarker can cite its source page.
-
-Raw pdfjs text items arrive unordered and ungrouped, which destroys the column
-layout that makes a lab report readable. The extractor rebuilds visual rows:
-items are sorted top-to-bottom, grouped into rows by baseline, and joined
-left-to-right with whitespace proportional to the horizontal gap. Laboratory
-reports typically print the value, unit and range a couple of points *above* the
-biomarker name they belong to, so rows are grouped against the previous item's
-baseline (with a total row-span cap) rather than the first item's.
-
-The result for the sample report:
+## Architecture
 
 ```
-Hematíes            4,73    x10 /mm³      [    4,1 - 5,75   ]
-Hemoglobina         13,9    g/dL          [   12,5 - 17,2   ]
-Colesterol total ü  209 *   mg/dL         [        <  200   ]
+src/
+├── app/
+│   ├── api/analyze/route.ts     POST /api/analyze — the only server entry point
+│   └── page.tsx                 Server component shell
+├── components/analyzer/         Feature UI (client)
+├── components/ui/               shadcn/ui primitives
+└── lib/
+    ├── upload/                  Formats, limits, validation, image normalization
+    ├── pdf/extract.ts           pdfjs text extraction
+    ├── ai/                      Provider abstraction, prompt, JSON schema
+    ├── domain/                  Zod schemas, units, names, classification
+    └── config.ts                Zod-validated server environment
 ```
 
-If a document yields fewer than 200 non-whitespace characters it is treated as a
-scan and rejected with `PDF_TEXT_EXTRACTION_FAILED`.
+- **Route handler** orchestrates the pipeline: validate → normalize into ordered sources → provider → validate → analyze. It is the only place that touches uploaded bytes.
+- **Client** is a small state machine (`analyzer-shell.tsx`) covering upload, selected files, processing, results and error states. It holds files in memory only for the duration of the request.
+- **Provider abstraction** — `AiProvider` has one method. `DisabledAiProvider`, `MockAiProvider` and `OpenAiCompatibleProvider` are chosen by environment. There is no fallback path: a missing key errors rather than quietly serving fixture data.
+- **Domain layer** is pure and framework-free — no I/O, no React, no provider knowledge — which is what makes classification auditable.
+- **Server/client separation:** every module that can touch secrets or the filesystem imports `server-only`, so importing one from a client component is a build error.
 
-**OCR extension point.** OCR would slot in at exactly one place: in
-`extractPdfText`, where that threshold is checked. The natural production shape
-is to render the page to an image and hand it to a hosted OCR service (AWS
-Textract, Google Document AI) or a WASM Tesseract build, then feed the recovered
-text into the same page array. Everything downstream — provider, validation,
-classification, UI — is unchanged, because it only ever sees `{ pageNumber, text }`.
-It is not implemented here: it is a meaningful cost, latency and accuracy
-decision, and pretending to do it badly would be worse than declining.
+## AI extraction vs. deterministic logic
 
-### Structured schema
+The model has exactly one job: **transcribe what is printed**. It never returns a status, never converts a unit, and never supplies a threshold — it is not even asked to.
 
-The provider must return this shape (`src/lib/domain/schemas.ts`):
+Two schema layers enforce this. `RawExtraction` is what a provider may return: original names, original values, original units, printed ranges. `AnalysisResult` is what the app computes from it. The model cannot influence a status except through the facts it transcribed.
 
-```ts
-{
-  reportLanguage: string | null,
-  patient: {
-    ageYears, dateOfBirth, sex, reportDate,
-    collectionDate, laboratoryName, reportId      // all nullable
-  },
-  biomarkers: [{
-    originalName: string,
-    standardizedNameSuggestion: string | null,
-    panel: string | null,
-    originalValue: string,          // exactly as printed
-    numericValue: number | null,    // null for "Positivo", "<0,2", "A"
-    originalUnit: string | null,
-    referenceRanges: Range[],
-    optimalRanges: Range[],         // only when the report labels them so
-    sourcePage: number,
-    confidence: number,             // transcription confidence, 0..1
-    notes: string | null            // report footnotes, verbatim
-  }]
-}
+Everything below is done in TypeScript, not by the model:
 
-Range = {
-  text: string,                     // as printed, e.g. "[ 4,1 - 5,75 ]"
-  min: number | null,
-  max: number | null,
-  minInclusive: boolean,            // false only for a strict < or >
-  maxInclusive: boolean,
-  unit: string | null,
-  appliesToSex: "male" | "female" | null,
-  appliesToAgeMinYears: number | null,
-  appliesToAgeMaxYears: number | null
-}
-```
-
-The same schema is expressed as JSON Schema for providers that support structured
-output, but the Zod schema stays the authority: whatever comes back is validated
-against it regardless of what the provider promised.
-
----
-
-## Image processing and why not Tesseract.js
-
-### The decision
-
-Photographs and screenshots are sent to the model **as images**, not converted to
-text by an OCR library first. No OCR dependency is used in this iteration.
-
-The reason is structural, not convenience. A laboratory report is a *table*, and
-everything this app does depends on one relationship holding: a value, its unit,
-its abnormal flag and its reference range all belong to the biomarker on the same
-visual row. Classic OCR flattens a page into a stream of words with bounding
-boxes and discards that relationship; rebuilding it means re-implementing column
-detection, and every mistake pairs a value with a neighbouring row's range —
-producing a confidently wrong status, which is this app's worst failure mode.
-
-`openai/gpt-5.6-luna` accepts image input directly (OpenRouter reports its
-modality as `text+image+file->text`) and reads the table as a table. Adding
-Tesseract.js would mean shipping a ~10 MB WASM bundle and language data, paying
-its runtime cost, and then handing the model a *worse* representation than the
-image it can already read. It would add a dependency in order to lose
-information.
-
-**Text PDFs are unaffected.** They still go through pdfjs locally, and the
-original PDF is never uploaded to the provider when local extraction succeeds.
-OCR is only ever a question for pixels.
-
-### The normalization pipeline
-
-[`normalize-image.ts`](src/lib/upload/normalize-image.ts), in this order:
-
-1. **Signature check** — the leading bytes must match JPEG, PNG or WebP. The
-   extension and the browser MIME type are client-supplied and forgeable.
-2. **EXIF orientation applied, then dropped** (`sharp().rotate()` with no
-   argument). Phone photos are routinely stored sideways with an orientation
-   flag, and a model reading a sideways table produces nonsense.
-3. **All metadata stripped** — EXIF, GPS, XMP, ICC, embedded thumbnails. A photo
-   of a lab report taken on a phone routinely carries the patient's home
-   coordinates; none of that should reach a third party.
-4. **Resized only if needed**, longest side capped at **2400 px**, never
-   upscaled. Both axes are capped, because step 2 swaps width and height for
-   sideways photos.
-5. **Encoded as a Base64 data URL.** PNG stays lossless (portal screenshots have
-   thin glyphs that JPEG artefacts damage); everything else becomes quality-82
-   JPEG to bound token cost.
-
-The bytes, the data URL and the prompt exist only for the lifetime of the
-request. None is logged or written to disk.
-
-### The multimodal message
-
-One ordered user message. A lead instruction, then every source in the order the
-user selected, each introduced by a labelled text block so the model can
-attribute what it reads:
-
-```jsonc
-{ "role": "user", "content": [
-  { "type": "text", "text": "The laboratory report below is supplied as 4 ordered source(s)..." },
-  { "type": "text", "text": "===== SOURCE 1 — FILE \"report.pdf\" — PDF PAGE 1 — PAGE 1 =====\n..." },
-  { "type": "text", "text": "===== SOURCE 2 — FILE \"photo.jpg\" — IMAGE — PAGE 2 =====\n..." },
-  { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,..." } }
-]}
-```
-
-Page numbers run continuously across every source, so `sourcePage` stays a single
-unambiguous number and the flat extraction schema is unchanged.
-
-The prompt tells the model that all sources are ordered parts of one report for
-one patient, to combine information across them, to keep row relationships intact
-when reading an image, to extract age and sex only when explicitly printed, never
-to guess anything unreadable, to drop **exact** duplicate rows created by
-overlapping pages while **keeping** repeated biomarkers that differ in value,
-unit, date or reference range, and to return only the existing strict schema.
-
-### OCR as a production enhancement
-
-Dedicated OCR is worth adding later, not as a replacement for vision but
-**alongside** it:
-
-- **Cross-validation.** Run OCR and the vision model over the same image and
-  compare the numeric values. Agreement is a strong signal; disagreement should
-  drive a biomarker to `needs_review` instead of being silently resolved.
-- **Real confidence scoring.** The model's `confidence` today is self-reported
-  and therefore weak. OCR engines emit per-character and per-word confidence from
-  the actual raster, which is a genuine measurement.
-- **Scanned PDFs.** Rendering an image-only PDF page to a raster and running OCR
-  (or feeding the raster to the vision model) is the natural fix for the
-  `PDF_TEXT_EXTRACTION_FAILED` path. The extension point is a single place in
-  `extractPdfText`.
-- **Cost and privacy control.** OCR runs locally. For deployments that cannot
-  send images to a third party, a local OCR pass plus a text-only model keeps
-  pixels inside the perimeter.
-
-In production this would most likely be AWS Textract or Google Document AI rather
-than Tesseract.js — both are table-aware and return structured cells, which is
-exactly the property Tesseract lacks.
-
----
-
-## Normalization and classification rules
-
-### Biomarker names
-
-1. A curated Spanish/English dictionary (`biomarker-names.ts`), matched against
-   the full printed name, then the name without the assay method ("por HPLC"),
-   then without specimen qualifiers ("(suero/plasma)"). This ordering keeps real
-   distinctions — HbA1c *(NGSP)* and *(IFCC)* stay separate biomarkers.
-2. Otherwise the model's English suggestion.
-3. Otherwise the original name.
-
-The source is recorded per biomarker and surfaced in the detail Sheet, and the
-original name is always shown next to the standardized one. Nothing is silently
-rewritten.
-
-### Units
-
-`units.ts` maps each printed unit to a canonical symbol plus a linear factor.
-Most entries are notation aliases with factor 1 — `x10³/mm³` and `10^3/µL` are the
-same quantity, because 1 mm³ = 1 µL.
-
-**Classification is invariant under this step.** The factor is applied to the
-value *and* to every range bound together, so a biomarker can never change status
-because of a conversion. The conversion exists so the UI can present one
-consistent unit vocabulary, and `conversionApplied` is true only when the
-magnitude actually changed.
-
-Two kinds of conversion are deliberately **not** implemented:
-
-- **Molar conversions** (`mg/dL ↔ mmol/L`) need an analyte-specific molar mass.
-  That is medical knowledge, and inventing it is exactly what this app must not
-  do. Such units pass through unchanged and remain classifiable against their own
-  printed range.
-- **Rescalings between two conventional units** (`mg/L ↔ mg/dL`, `g/L ↔ g/dL`)
-  would trade one familiar unit for another with no gain — CRP is conventionally
-  reported in mg/L, and converting it would only surprise the reader.
-
-A result whose value could not be parsed as a number keeps its **original** unit
-in the UI, because pairing a censored value like `<0,2` with a converted unit
-would imply a conversion that never happened.
-
-### Age
-
-If the report prints an age, it is used. If it prints a date of birth, the age is
-computed in TypeScript from the date of birth and the report date — arithmetic,
-not inference. The UI marks derived ages explicitly. The sample report prints
-`F. Nac.: 13/02/1978` with a report date of `23/02/2026`, and the app shows
-*48 years (derived from date of birth)*.
-
-### Classification
-
-`classifyBiomarker()` decides in this order:
+- **Name standardization** — curated dictionary first, model's translation second, original name last. The source is recorded and the original name is always shown.
+- **Unit standardization** — the conversion factor is applied to the value *and* to every range bound together, so a biomarker can never change status because of a conversion. Molar conversions (`mg/dL` ↔ `mmol/L`) are deliberately not implemented; they need an analyte-specific molar mass, which is medical knowledge this app must not invent. Such units pass through unchanged and remain classifiable against their own printed range.
+- **Age derivation** — computed from date of birth and report date. Arithmetic, not inference.
+- **Range matching** — a range applies when every demographic condition it states is satisfied; the most specific applicable range wins.
+- **Classification**, in this order:
 
 | # | Condition | Status |
 | --- | --- | --- |
-| 1 | No parsable numeric value (`Positivo`, `A`, `<0,2`) | `needs_review` |
-| 2 | Value unit and range unit disagree after standardization | `needs_review` |
-| 3 | No usable range printed at all | `needs_review` |
+| 1 | No parsable numeric value (e.g. `Positivo`, `<0,2`) | `needs_review` |
+| 2 | Value and range units disagree after standardization | `needs_review` |
+| 3 | No usable range printed | `needs_review` |
 | 4 | An applicable range needs an age or sex the report did not state | `needs_review` |
-| 5 | Several equally specific ranges apply and disagree about this value | `needs_review` |
+| 5 | Several equally specific ranges apply and disagree | `needs_review` |
 | 6 | Inside an applicable **optimal** range | `optimal` |
 | 7 | Inside an applicable **reference** range | `normal` |
 | 8 | Outside an applicable **reference** range | `out_of_range` |
 
-**Range applicability.** A range applies when every demographic condition it
-states is satisfied. A range with no stated condition applies to everyone. When
-several ranges apply, the most demographically specific ones win (sex is more
-specific than age, both are more specific than none).
+`needs_review` exists so the app never guesses. If the report gives no range, the value is not numeric, or the applicable range is ambiguous, the result is surfaced as unresolved rather than assumed fine. Every status carries a one-sentence reason built from the same facts, visible in the detail sheet.
 
-**On the "missing age or sex" rule.** The brief lists a missing age or sex as a
-`needs_review` trigger. Taken literally that would flag every biomarker on a
-report that omits either, including biomarkers whose range is not demographic at
-all — which is noise, not caution. The rule implemented is the one that carries
-the intent: *a missing fact matters when it is needed to choose a range*. If a
-biomarker has sex-specific ranges and the report gives no sex, the result is
-`needs_review`, because the app genuinely cannot tell which range applies. If the
-report prints one range for everyone, a missing age changes nothing and the
-result is classified. This is the only place the implementation deviates from a
-literal reading of the brief, and it deviates towards fewer false alarms without
-ever guessing.
+`optimal` appears only where a report explicitly prints an optimal, target or recommended range. Many reports print none, in which case that count is legitimately zero.
 
-**Bounds.** `[ 4,1 - 5,75 ]` is inclusive on both ends. `[ < 200 ]` is a strict
-upper bound. `[ > 40 ]` is a strict lower bound. Inclusivity comes from the
-operator the report printed, never from a default.
+**This is informational only. It is not a diagnosis and not medical advice.**
 
-Every status carries a one-sentence reason built from the same facts, e.g.
-*"209 mg/dL is above the reference range printed on the report (< 200 mg/dL)."*
+## AI provider configuration
 
-**Worked example — the sample report's lipid panel.** The report prints
-cardiovascular-risk target values under *Colesterol LDL* and explicitly calls
-them recommended, so they are transcribed as optimal ranges (`< 55`, `< 70`,
-`< 100`, `< 116 mg/dL`). The report does not assign a risk category to this
-patient. With a result of 149 mg/dL the tiers all agree — the value is outside
-every one of them — so the classifier proceeds to the printed reference range
-`< 116` and returns `out_of_range`. Had the result been 95 mg/dL the tiers would
-have disagreed, and the app would have returned `needs_review` rather than
-picking a risk category on the patient's behalf. That is the intended behaviour.
+All server-side. No variable is prefixed with `NEXT_PUBLIC_`.
 
----
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `AI_PROVIDER` | `disabled` | `disabled` \| `mock` \| `openai-compatible` |
+| `AI_API_KEY` | — | Bearer token; required for `openai-compatible` |
+| `AI_BASE_URL` | — | e.g. `https://openrouter.ai/api/v1` |
+| `AI_MODEL` | — | Model id, passed through unchanged |
+| `AI_TEMPERATURE` | `0` | A number, or `omit` to send no temperature field |
+| `AI_SUPPORTS_IMAGES` | `true` | Declared, not probed; `false` refuses image uploads before a request is spent |
+| `AI_TIMEOUT_MS` | `60000` | Per-request timeout |
+| `AI_MAX_RETRIES` | `1` | Retries for transport, 5xx and rate-limit failures only |
+| `AI_APP_URL` / `AI_APP_TITLE` | localhost / app name | Optional OpenRouter attribution headers |
+| `MAX_UPLOAD_SIZE_MB` | `10` | Per-file upload limit |
+
+OpenRouter works through the `openai-compatible` provider; requests to an `openrouter.ai` base URL additionally send `provider: { require_parameters: true }` so routing only reaches upstreams that honour the strict JSON schema. Every other endpoint receives a plain, portable request body.
+
+**Model capability matters.** The chosen model must support strict structured output, and must accept image input if images are uploaded. Support for individual request parameters also varies by model — with `require_parameters` enabled, sending a parameter the model does not accept can leave no eligible provider. Check the model's parameter list before configuring it.
 
 ## Error handling
 
-Every failure resolves to exactly one typed code. The API always answers with
-`{ ok: true, data } | { ok: false, error: { code, message, hint? } }`.
+Every failure resolves to one typed code. The API always answers `{ ok: true, data } | { ok: false, error: { code, message, hint? } }`, and the UI maps each code to a title, an explanation and a next step.
 
-| Code | HTTP | Cause | What the user sees |
-| --- | --- | --- | --- |
-| `NO_FILES` | 400 | No `files` field in the request | "No file was received" |
-| `TOO_MANY_FILES` | 413 | More than 8 files | "Remove some files" |
-| `TOTAL_UPLOAD_TOO_LARGE` | 413 | Combined size over 30 MB | Limit and actual total |
-| `DUPLICATE_FILE` | 400 | Same name, size and type twice | Names the duplicate |
-| `INVALID_FILE_TYPE` | 415 | Unsupported extension or contradictory MIME | Names the file and the supported formats |
-| `EMPTY_FILE` | 400 | Zero bytes | Names the file |
-| `FILE_TOO_LARGE` | 413 | Over `MAX_UPLOAD_SIZE_MB` | Limit and actual size |
-| `INVALID_PDF_SIGNATURE` | 415 | Missing `%PDF-` header | "This file is not a valid PDF" |
-| `INVALID_IMAGE_SIGNATURE` | 415 | Bytes do not match JPEG/PNG/WebP | "That file is not a valid image" |
-| `IMAGE_CORRUPTED` | 422 | The decoder could not read the image | "The image could not be read" |
-| `PDF_CORRUPTED` | 422 | pdfjs could not open it | "Damaged, encrypted or password protected" |
-| `PDF_TEXT_EXTRACTION_FAILED` | 422 | Scan / image-only PDF | Explains OCR is not enabled and asks for a text PDF |
-| `NO_LAB_DATA_FOUND` | 422 | Zero biomarkers extracted | Asks for sharp, upright, well-lit pages |
-| `CONFLICTING_PATIENTS` | 422 | Sources identify different people | Asks to remove unrelated files |
-| `PROVIDER_NO_IMAGE_SUPPORT` | 503 | Images uploaded, `AI_SUPPORTS_IMAGES=false` | "The configured model cannot read images" |
-| `AI_NOT_CONFIGURED` | 503 | `AI_PROVIDER=disabled` | How to enable demo mode |
-| `AI_MISCONFIGURED` | 500 | Live provider missing settings | Which variables are missing |
-| `AI_MISCONFIGURED` | 500 | Provider returned 401/403 — bad or missing key | "Check that `AI_API_KEY` is valid" |
-| `AI_TIMEOUT` | 504 | Provider exceeded `AI_TIMEOUT_MS` | "Try again in a moment" |
-| `AI_RATE_LIMITED` | 429 | Provider returned 429/408 | "Too many requests right now" |
-| `AI_INSUFFICIENT_CREDITS` | 402 | OpenRouter account out of credits | "Top it up and try again" |
-| `AI_STRUCTURED_OUTPUT_UNSUPPORTED` | 502 | Provider returned 404 — no route satisfies the required parameters | "The configured model cannot return structured output" |
-| `AI_REQUEST_FAILED` | 502 | Transport failure or upstream 5xx | "Try again in a moment" |
-| `AI_INVALID_RESPONSE` | 502 | Not JSON, or failed Zod validation | Explains it was rejected, not shown |
-| `INTERNAL_ERROR` | 500 | Anything unexpected | Generic message |
+- **Selection** — no files, too many, combined size exceeded, duplicate file
+- **Per file** — unsupported format, empty, too large, signature mismatch for PDF or image
+- **Processing** — corrupted PDF, corrupted image, PDF with no extractable text
+- **Extraction** — no lab data found, sources that appear to be different patients
+- **Configuration** — provider disabled, missing settings, model without image support
+- **Provider** — timeout, rate limited, insufficient credits, unroutable structured-output request, transport failure, response failing schema validation
 
-**Any invalid file rejects the whole request.** A partially analysed report would
-silently omit results, which is more dangerous than a clear failure. Error
-messages name the offending file and its position so the user knows which row to
-remove.
+Upstream failures are classified from the HTTP status code alone. The provider's error body is never read, logged or forwarded, because a provider may echo the prompt — and therefore report content — back inside an error payload.
 
-`PROVIDER_NO_IMAGE_SUPPORT` is checked **before** the provider call, so an image
-upload against a text-only model costs nothing.
+## Privacy and safety
 
-`CONFLICTING_PATIENTS` needs one signal the model must supply, so
-`RawPatientSchema` carries a single extra boolean, `conflictingSources`. The model
-sets it only when the sources print different names, document numbers or dates of
-birth. It is the one field added to the extraction schema for this feature; the
-structure is otherwise unchanged.
+- The API key is a server-side environment variable and never reaches the browser. The browser talks only to `/api/analyze`.
+- Uploaded bytes, extracted text, normalized image data and the analysis exist only for the lifetime of the request. There is no database, object storage, cache, session or analytics in this application.
+- Image metadata — EXIF, GPS, ICC, thumbnails — is stripped during normalization before anything is sent to a provider.
+- Text PDFs are read locally; only extracted text is sent. Images are necessarily sent to the provider, which is a larger disclosure.
+- Only error codes are logged. Messages may quote report content, so they are returned to the caller but not written to logs.
 
-Retries apply to `AI_REQUEST_FAILED` and `AI_RATE_LIMITED` only. A timeout, a bad
-key, exhausted credits, an unroutable request or an invalid response are not
-replayed — retrying those costs money and cannot help.
+**No compliance claim is made.** This is a technical demonstration, not a certified product, and nothing here should be read as GDPR, HIPAA or medical-device conformance. Using it with real patient data would require, at minimum, a data processing agreement with the AI provider, a lawful basis, access control, and a clinical review of the classification rules. Output is informational only and is not a diagnosis or medical advice.
 
-Upstream failures are classified **from the HTTP status code alone**. The
-provider's error body is never read, parsed, logged or forwarded, because a
-provider may echo the prompt — and therefore report content — back inside an
-error payload. The error panel
-offers *Try again* (same file) and *Choose another file*, and shows the error
-code so a user can quote it without pasting any report content.
+## Current limitations
+
+- **No OCR.** Scanned or image-only PDFs are rejected; photos and screenshots must be uploaded as images instead.
+- **Extraction quality is the model's.** A mis-transcribed value produces a confidently wrong status. The detail sheet shows the model's self-reported confidence, source page and everything as printed, so a result can be checked against the original — mitigation, not a guarantee.
+- **Model-dependent.** Behaviour varies by model; free-tier models in particular are subject to queuing and rate limits, and a large strict-JSON payload can exceed `AI_TIMEOUT_MS`.
+- **Unusual layouts.** Row reconstruction is tuned for common report layouts. Heavily non-standard formatting may pair values with the wrong range or be skipped.
+- **Conflicting-patient detection is model-reported**, so it is a safety net rather than a guarantee.
+- **Duplicate detection is metadata-based** (name, size, type); the same page saved under two names is not caught before upload.
+- **No accounts, no history, no export, no persistence, and no deployment.** Each analysis is standalone.
+- **No automated test suite.** The domain layer is pure and framework-free specifically so unit tests would be straightforward to add.
+
+## Production considerations
+
+Not deployed. Before this handled real patient data it would need: authentication and per-user authorization; a secure storage strategy with encryption and a short retention policy if persistence is ever introduced; background/async processing so long reports are not bound to a single request timeout; provider monitoring, retries and fallbacks; observability that records request outcomes without recording report content; rate limiting and upload abuse controls; and a privacy and clinical review of both the data flow and the classification rules.
 
 ---
 
-## Privacy and security
-
-**What the app does**
-
-- All processing happens on the server. The browser never talks to an AI
-  provider, and the API key never leaves the server.
-- The uploaded bytes, the extracted text, the normalized image data URLs, the
-  prompt and the analysis exist only for the lifetime of the request. There is no
-  database, no object storage, no cache, no session, no analytics and no
-  telemetry. Base64 image data is never logged or written to disk.
-- **Image metadata is destroyed before anything leaves the server.** EXIF, GPS,
-  XMP, ICC and embedded thumbnails are stripped during normalization, so a phone
-  photo of a report does not carry the patient's location to the provider.
-- **Text PDFs are never uploaded to the provider.** They are read locally with
-  pdfjs and only the extracted text is sent. Images necessarily are sent, which
-  is a strictly larger disclosure — see the warning in the provider section.
-- Only the error *code* is logged, and only for unexpected failures. Error
-  messages can quote report text, so they are returned to the caller but never
-  written to a log. pdfjs verbosity is set to zero so font warnings cannot write
-  document-derived noise into the logs either.
-- Configuration errors report variable *names*, never values. Provider error
-  bodies are never echoed to the client, because a provider may reflect the
-  prompt — and therefore report content — back in an error.
-- Every input is validated: the upload (extension, MIME, size, signature), the
-  environment (Zod), and the model response (Zod).
-- No `NEXT_PUBLIC_` variable exists. Server-only modules import `server-only`, so
-  a bad import fails the build.
-
-**What the app does not claim**
-
-This is a technical demonstration, not a certified product. It is **not** a
-medical device, and no claim is made about GDPR, HIPAA, ISO 13485, IVDR or any
-other compliance regime. Running it on real patient data in production would
-require, at minimum: a data processing agreement with the AI provider covering
-zero data retention, a lawful basis and privacy notice, access control and
-authentication, audit logging that records access without recording content,
-encryption in transit and at rest for anything that does get stored, a documented
-retention policy, and a clinical review of the classification rules.
-
-The medical disclaimer is visible in the upload state, in the results state and
-in the page footer.
-
----
-
-## Manual QA checklist
-
-Run `npm run dev`, then work through these.
-
-**Provider modes**
-
-- [ ] `AI_PROVIDER=disabled` → upload a valid PDF → `AI_NOT_CONFIGURED` panel
-      explaining how to enable demo mode.
-- [ ] `AI_PROVIDER=mock` → upload any valid text PDF → results render, and the
-      amber **Demo mode** banner is visible above them.
-- [ ] `AI_PROVIDER=openai-compatible` with no other variables set →
-      `AI_MISCONFIGURED` listing `AI_API_KEY, AI_BASE_URL, AI_MODEL`.
-- [ ] OpenRouter configured but `AI_API_KEY` left empty → `AI_MISCONFIGURED`
-      listing only `AI_API_KEY`.
-- [ ] With a real OpenRouter key → results render, **no** demo banner, provider
-      label reads `OpenAI-compatible · openai/gpt-5.6-luna`.
-- [ ] With a deliberately invalid key → "The AI provider rejected the
-      credentials", and the key never appears in the response or the server log.
-- [ ] Switching `AI_PROVIDER` back to `mock` restores demo mode with no other
-      change and no credit spend.
-
-**Multi-file selection**
-
-- [ ] Selecting several files at once lists them all, numbered, in the order
-      chosen, each with name, size and format badge.
-- [ ] Dropping several files at once behaves identically.
-- [ ] *Add more* **appends** to the selection instead of replacing it.
-- [ ] Selecting a file already in the list silently skips it (no duplicate row).
-- [ ] Removing one row renumbers the remaining parts and keeps their order.
-- [ ] *Remove all* returns to the empty upload state.
-- [ ] Adding a 9th file is refused, and the list explains the 8-file maximum.
-- [ ] A selection over 30 MB shows the inline warning and disables *Analyze*.
-- [ ] A mixed PDF + JPEG + PNG + WebP selection analyses successfully, and the
-      results header reads "extracted from N files".
-- [ ] The Sources card reports file count, PDF pages and image count.
-- [ ] One PDF on its own still works exactly as before.
-
-**Upload validation**
-
-- [ ] A `.txt` file → "That file is not a PDF".
-- [ ] A `.txt` file renamed to `.pdf` → "This file is not a valid PDF"
-      (`INVALID_PDF_SIGNATURE`).
-- [ ] A zero-byte file → "The file is empty".
-- [ ] A file larger than `MAX_UPLOAD_SIZE_MB` → limit and actual size shown.
-- [ ] A truncated or random-bytes PDF → "The PDF could not be opened".
-- [ ] An image-only / scanned PDF → `PDF_TEXT_EXTRACTION_FAILED` naming that
-      file, and suggesting a photo or screenshot instead.
-- [ ] A `.gif` or `.svg` → "not a supported format", naming the file.
-- [ ] A PNG renamed to `.jpg` → `INVALID_IMAGE_SIGNATURE`.
-- [ ] A JPEG with random bytes after the header → `IMAGE_CORRUPTED`.
-- [ ] One bad file among several good ones rejects the whole request and names
-      the bad file and its position.
-- [ ] A sideways phone photo is analysed upright (EXIF orientation applied).
-- [ ] With `AI_SUPPORTS_IMAGES=false`, an image upload is refused before any
-      provider request; a PDF-only upload still reaches the provider.
-
-**Happy path (sample report, demo mode)**
-
-- [ ] 37 biomarkers extracted; counts add up to the total.
-- [ ] Patient reads *48 years (derived from date of birth) · Male*.
-- [ ] Total Cholesterol 209 mg/dL → **Out of range**, reason cites `< 200 mg/dL`.
-- [ ] Blood Group `A` and Rh Factor `Positivo` → **Needs review** (non-numeric).
-- [ ] C-Reactive Protein `<0,2` → **Needs review**, and the value keeps its
-      original `mg/L` unit.
-- [ ] Hematíes shows the standardized name *Red Blood Cells (RBC)* with
-      *Hematíes* underneath, and the unit as `10^6/µL`.
-- [ ] Optimal count is `0` — correct for this report, which prints no
-      unconditional optimal range.
-
-**Interaction and accessibility**
-
-- [ ] Drag-and-drop and the file picker both work.
-- [ ] *Remove* clears the selection; the same file can be picked again.
-- [ ] Search filters by standardized name, original name, panel and unit; the
-      "Showing N of M" line updates and is announced.
-- [ ] The status filter narrows the table; an empty result shows a friendly row.
-- [ ] Clicking a biomarker name or the chevron opens the detail Sheet with the
-      reason, ranges (applied one marked), confidence and source page.
-- [ ] `Escape` closes the Sheet; focus returns sensibly.
-- [ ] The whole flow is reachable with `Tab` and `Enter` only.
-- [ ] Layout holds at 375 px, 768 px and 1440 px; the table scrolls horizontally
-      inside its own container rather than the page.
-- [ ] *Analyze another report* returns to the empty upload state.
-
-**Privacy**
-
-- [ ] The Network tab shows exactly one request to `/api/analyze`; no request
-      goes from the browser to any AI provider.
-- [ ] The server log contains no report content, no file names, no Base64 image
-      data and no API key.
-
----
-
-## Limitations and tradeoffs
-
-- **No OCR dependency.** Photographs and screenshots go to the vision model
-  directly; see [Image processing](#image-processing-and-why-not-tesseractjs) for
-  why, and for what dedicated OCR would add later.
-- **Scanned PDFs are still rejected.** A PDF with no text layer cannot be
-  analysed, because PDFs are read locally and never uploaded. The workaround is
-  to upload a photo or screenshot of the pages instead, which the error message
-  says. Rendering PDF pages to rasters is the obvious next step and is not done
-  here.
-- **Image analysis costs more and is less reliable than text.** A 2400 px page
-  is worth far more tokens than its text, and a blurred or skewed photo yields
-  worse transcription. Text PDFs remain the best input by a wide margin.
-- **Duplicate detection is metadata-based.** Name, size and type. The same page
-  saved twice under different names is not detected as a duplicate before upload;
-  the model is instructed to drop exact duplicate rows, but that is a model
-  behaviour, not a guarantee.
-- **`conflictingSources` is model-reported.** A mixed-patient upload is only
-  caught if the model notices and sets the flag. It is a safety net, not a
-  guarantee — the app cannot verify identity across sources on its own.
-- **Extraction quality is the model's.** A wrong transcription produces a wrong
-  status, deterministically. The detail Sheet shows the model's confidence, the
-  source page and everything as printed so a result can be checked against the
-  original in seconds — but this is mitigation, not a guarantee.
-- **Demo mode ignores the uploaded file's content.** By design, and stated
-  loudly in the UI.
-- **No molar unit conversions**, for the reason given above.
-- **The name dictionary is finite.** It covers the sample report and common
-  panels; anything else falls back to the model's translation or the original
-  name, with the source shown.
-- **No persistence, no accounts, no history, no export.** Out of scope for the
-  brief, and each would change the privacy posture materially.
-- **No automated test suite.** Also out of scope; the domain layer is pure and
-  framework-free precisely so that unit tests would be trivial to add — `classify.ts`,
-  `units.ts` and `biomarker-names.ts` have no I/O and no framework dependencies.
-- **Single-request processing.** A very large report plus a slow provider can
-  approach the platform's function timeout. See below.
-- **English UI only**, although reports in any language are supported.
-
----
-
-## Production architecture on AWS
-
-Not deployed. This is how I would run it, optimising for low fixed cost and a
-small PHI blast radius.
-
-### Baseline (what the current shape needs)
-
-```
-Route 53 ─▶ CloudFront ─▶ S3            static assets, immutable, long TTL
-                       └▶ API Gateway (HTTP API) ─▶ Lambda (Node 20, arm64)
-                                                     ├─ pdfjs text extraction
-                                                     ├─ AI provider call
-                                                     └─ deterministic analysis
-                                                         │
-                                          Secrets Manager / SSM Parameter Store
-                                                         │
-                                                    CloudWatch (metrics + codes)
-```
-
-- **CloudFront + S3** for the static bundle. Pennies at this traffic, and it
-  keeps the compute path free of asset requests.
-- **API Gateway (HTTP API) + Lambda** for `/api/analyze`. The workload is bursty
-  and stateless, so per-request billing beats an idle container. Graviton
-  (`arm64`) is ~20% cheaper for the same work. Memory around 1024 MB: pdfjs is
-  CPU-bound during parsing, and on Lambda more memory means more CPU, so a larger
-  size is often *cheaper* per request than a smaller one.
-- **Secrets Manager** for `AI_API_KEY` (rotation, audit trail), **SSM Parameter
-  Store** for non-secret configuration (free tier, no per-secret charge). Cached
-  in the execution context, never logged.
-- **Limits everywhere**: API Gateway payload cap and throttling, Lambda timeout
-  just above `AI_TIMEOUT_MS`, reserved concurrency to bound spend, WAF rate
-  limiting in front of CloudFront.
-- **CloudWatch without PHI.** Metrics on request counts, latency and the error
-  code distribution. Structured logs that carry a request id and an error code
-  and nothing else. A 14–30 day retention policy so even that ages out.
-
-Rough monthly cost for a demo or an early pilot: a few dollars of AWS spend,
-dominated entirely by AI provider tokens. Almost all of the fixed cost is
-Route 53 and Secrets Manager.
-
-### If the workload grows
-
-- **Large files or long processing.** Once reports get big enough to risk the API
-  Gateway payload limit or a 30-second client wait, switch to a presigned S3
-  upload plus an async job: the browser PUTs directly to a temporary bucket,
-  Lambda processes on the S3 event, and the client polls or receives a WebSocket
-  push. The bucket gets SSE-KMS, Block Public Access, TLS-only bucket policy, and
-  a **1-day lifecycle expiry** — the object exists only long enough to be read.
-- **Very large reports.** Move extraction to a container (App Runner or ECS
-  Fargate) where a 15-minute Lambda ceiling and 10 GB `/tmp` are not constraints.
-- **OCR.** Textract as an async job on the temporary S3 object, feeding the same
-  `{ pageNumber, text }` array.
-- **Multiple providers.** Bedrock keeps inference inside the AWS account and
-  under the same data agreement, which materially simplifies the PHI story
-  compared with a third-party API. It slots in as one more `AiProvider`.
-
-### If persistence is introduced
-
-The moment results are saved, this stops being a stateless tool and becomes a
-health record system. Supabase is a reasonable choice at that point — Postgres
-with row-level security, built-in auth, and encrypted storage with signed URLs —
-because RLS makes "a user can only ever read their own results" a database
-guarantee rather than an application convention. That step needs a data
-processing agreement, a documented retention policy, per-tenant encryption
-decisions, audit logging, and a considered answer to whether raw PDFs are stored
-at all or only the derived structured results. It is deliberately not part of
-this challenge.
-
----
-
-## Disclaimer
-
-This tool is informational and is **not medical advice**. It classifies results
-only against the ranges printed on the uploaded report and adds no thresholds,
-targets or interpretations of its own. It is not a medical device. Always discuss
-laboratory results with a qualified healthcare professional.
+Informational tool only. Not a medical device and not medical advice.
