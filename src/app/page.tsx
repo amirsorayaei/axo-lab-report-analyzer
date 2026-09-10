@@ -13,7 +13,10 @@ export default function HomePage() {
   const maxUploadMb = Math.round(getServerConfig().maxUploadBytes / (1024 * 1024));
 
   return (
-    <div className="flex min-h-full flex-col">
+    // `flex-1` rather than a percentage height: the body is a flex column with
+    // only a min-height, so `min-h-full` collapses here and lets the footer ride
+    // up under short content. Growing to fill the body pins it to the bottom.
+    <div className="flex flex-1 flex-col">
       <header className="border-b bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-2.5">
