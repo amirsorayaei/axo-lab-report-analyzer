@@ -1,10 +1,11 @@
 import "server-only";
 
 import type { RawExtraction } from "@/lib/domain/schemas";
-import type { PdfPage } from "@/lib/pdf/extract";
+import type { ReportInput } from "@/lib/upload/report-input";
 
 export type ExtractionRequest = {
-  pages: PdfPage[];
+  /** Ordered sources, exactly as the user arranged them. */
+  inputs: ReportInput[];
   /** Aborts the provider call when the caller times out or the client leaves. */
   signal: AbortSignal;
 };
@@ -19,5 +20,10 @@ export interface AiProvider {
   readonly label: string;
   /** `mock` makes the UI show a demo-mode banner. */
   readonly mode: "mock" | "live";
+  /**
+   * Whether this provider can accept image sources. Declared rather than probed:
+   * it lets the app refuse an image upload before spending a request.
+   */
+  readonly supportsImages: boolean;
   extract(request: ExtractionRequest): Promise<RawExtraction>;
 }

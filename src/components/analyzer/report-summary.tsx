@@ -1,18 +1,18 @@
-import { Building2, CalendarDays, Hash, User } from "lucide-react";
+import { Building2, CalendarDays, Files, User } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import type { PatientSummary } from "@/lib/domain/schemas";
+import type { PatientSummary, ReportSourceSummary } from "@/lib/domain/schemas";
 
 const SEX_LABEL: Record<string, string> = { male: "Male", female: "Female" };
 
 export function ReportSummary({
   patient,
-  pageCount,
+  sources,
   reportLanguage,
 }: {
   patient: PatientSummary;
-  pageCount: number;
+  sources: ReportSourceSummary;
   reportLanguage: string | null;
 }) {
   const ageNote =
@@ -42,11 +42,17 @@ export function ReportSummary({
       value: patient.reportDate ?? patient.collectionDate ?? "Not stated on the report",
     },
     {
-      icon: Hash,
-      label: "Report",
+      icon: Files,
+      label: "Sources",
       value: [
+        `${sources.fileCount} file${sources.fileCount === 1 ? "" : "s"}`,
+        sources.pdfCount > 0
+          ? `${sources.pdfPageCount} PDF page${sources.pdfPageCount === 1 ? "" : "s"}`
+          : null,
+        sources.imageCount > 0
+          ? `${sources.imageCount} image${sources.imageCount === 1 ? "" : "s"}`
+          : null,
         patient.reportId,
-        `${pageCount} page${pageCount === 1 ? "" : "s"}`,
         reportLanguage ? reportLanguage.toUpperCase() : null,
       ]
         .filter(Boolean)

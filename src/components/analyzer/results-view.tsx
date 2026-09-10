@@ -31,8 +31,10 @@ export function ResultsView({
         <div>
           <h2 className="text-lg font-semibold">Report analysis</h2>
           <p className="text-sm text-muted-foreground">
-            {result.summary.total} biomarkers extracted and classified against the
-            ranges printed on the report.
+            {result.summary.total} biomarkers extracted from{" "}
+            {result.sources.fileCount}{" "}
+            {result.sources.fileCount === 1 ? "file" : "files"} and classified
+            against the ranges printed on the report.
           </p>
         </div>
         <Button type="button" variant="outline" onClick={onReset} className="sm:shrink-0">
@@ -43,7 +45,7 @@ export function ResultsView({
 
       <ReportSummary
         patient={result.patient}
-        pageCount={result.pageCount}
+        sources={result.sources}
         reportLanguage={result.reportLanguage}
       />
 

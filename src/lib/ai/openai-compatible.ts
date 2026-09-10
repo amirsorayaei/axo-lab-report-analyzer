@@ -3,7 +3,7 @@ import "server-only";
 import {
   EXTRACTION_JSON_SCHEMA,
   EXTRACTION_SYSTEM_PROMPT,
-  buildExtractionUserPrompt,
+  buildExtractionUserContent,
 } from "@/lib/ai/prompt";
 import { AppError } from "@/lib/domain/errors";
 import type { ErrorCode } from "@/lib/domain/errors";
@@ -22,6 +22,8 @@ export type OpenAiCompatibleOptions = {
   /** Optional OpenRouter attribution. Never required for a request to succeed. */
   appUrl: string;
   appTitle: string;
+  /** Declared by configuration; see AI_SUPPORTS_IMAGES in .env.example. */
+  supportsImages: boolean;
 };
 
 /**
@@ -47,12 +49,14 @@ function isOpenRouter(baseUrl: string): boolean {
 export class OpenAiCompatibleProvider implements AiProvider {
   readonly label: string;
   readonly mode = "live" as const;
+  readonly supportsImages: boolean;
 
   constructor(private readonly options: OpenAiCompatibleOptions) {
     this.label = `OpenAI-compatible · ${options.model}`;
+    this.supportsImages = options.supportsImages;
   }
 
-  async extract({ pages, signal }: ExtractionRequest): Promise<RawExtraction> {
+  async extract({ inputs, signal }: ExtractionRequest): Promise<RawExtraction> {
     const body = {
       model: this.options.model,
       // Deterministic transcription, not creative writing. Reasoning models such
@@ -64,7 +68,9 @@ export class OpenAiCompatibleProvider implements AiProvider {
       seed: 0,
       messages: [
         { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
-        { role: "user", content: buildExtractionUserPrompt(pages) },
+        // Ordered multimodal content: one lead instruction, then labelled text
+        // and image blocks in exactly the order the user selected them.
+        { role: "user", content: buildExtractionUserContent(inputs) },
       ],
       response_format: {
         type: "json_schema",

@@ -14,8 +14,8 @@ export function DemoModeBanner({ providerLabel }: { providerLabel: string }) {
       <AlertDescription className="text-status-review/90">
         <p>
           The server is running with <code className="font-mono">AI_PROVIDER=mock</code>,
-          so the uploaded PDF was validated and its text was extracted, but the
-          biomarkers below come from the bundled sample report.
+          so your files were validated and prepared, but the biomarkers below come
+          from the bundled sample report rather than from what you uploaded.
         </p>
         <p className="text-xs opacity-80">Provider: {providerLabel}</p>
       </AlertDescription>

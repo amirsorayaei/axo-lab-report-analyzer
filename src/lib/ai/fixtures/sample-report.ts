@@ -163,6 +163,7 @@ export const SAMPLE_REPORT_EXTRACTION: RawExtraction = {
     collectionDate: null,
     laboratoryName: "SNB Diagnósticos Globales",
     reportId: "V6838501",
+    conflictingSources: false,
   },
   biomarkers: ROWS.map((row) => ({
     originalName: row.name,

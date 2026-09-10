@@ -50,3 +50,7 @@ next-env.d.ts
 
 # Local agent tooling
 .claude/
+
+# Regenerated agent tooling docs
+AGENTS.md
+CLAUDE.md

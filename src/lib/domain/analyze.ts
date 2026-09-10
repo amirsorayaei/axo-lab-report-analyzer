@@ -9,6 +9,7 @@ import type {
   RawBiomarker,
   RawExtraction,
   RawRange,
+  ReportSourceSummary,
   StandardizedRange,
 } from "@/lib/domain/schemas";
 
@@ -19,7 +20,11 @@ import type {
  */
 export function analyzeExtraction(
   extraction: RawExtraction,
-  meta: { pageCount: number; providerMode: "mock" | "live"; providerLabel: string },
+  meta: {
+    sources: ReportSourceSummary;
+    providerMode: "mock" | "live";
+    providerLabel: string;
+  },
 ): AnalysisResult {
   const patient = buildPatientSummary(extraction);
   const context: PatientContext = { ageYears: patient.ageYears, sex: patient.sex };
@@ -31,7 +36,8 @@ export function analyzeExtraction(
   return {
     patient,
     reportLanguage: extraction.reportLanguage,
-    pageCount: meta.pageCount,
+    pageCount: meta.sources.pdfPageCount,
+    sources: meta.sources,
     biomarkers,
     summary: summarize(biomarkers),
     providerMode: meta.providerMode,

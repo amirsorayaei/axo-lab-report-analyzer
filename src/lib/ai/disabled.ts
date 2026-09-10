@@ -11,6 +11,7 @@ import type { AiProvider } from "@/lib/ai/types";
 export class DisabledAiProvider implements AiProvider {
   readonly label = "Disabled";
   readonly mode = "live" as const;
+  readonly supportsImages = false;
 
   async extract(): Promise<never> {
     throw new AppError(

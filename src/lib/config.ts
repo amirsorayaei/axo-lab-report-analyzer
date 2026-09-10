@@ -29,6 +29,13 @@ const EnvSchema = z.object({
   // Optional OpenRouter attribution headers. Never required for a request.
   AI_APP_URL: z.string().url().default("http://localhost:3000"),
   AI_APP_TITLE: z.string().default("Axo Lab Report Analyzer"),
+  // Declared, not probed. The configured default (openai/gpt-5.6-luna) accepts
+  // image input; set this to false for a text-only model so image uploads are
+  // refused before a request is spent.
+  AI_SUPPORTS_IMAGES: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   MAX_UPLOAD_SIZE_MB: z.coerce.number().positive().max(50).default(10),
 });
 
@@ -43,6 +50,7 @@ export type ServerConfig = {
   aiMaxRetries: number;
   aiAppUrl: string;
   aiAppTitle: string;
+  aiSupportsImages: boolean;
   maxUploadBytes: number;
 };
 
@@ -61,6 +69,7 @@ export function getServerConfig(): ServerConfig {
     AI_MAX_RETRIES: emptyToUndefined(process.env.AI_MAX_RETRIES),
     AI_APP_URL: emptyToUndefined(process.env.AI_APP_URL),
     AI_APP_TITLE: emptyToUndefined(process.env.AI_APP_TITLE),
+    AI_SUPPORTS_IMAGES: emptyToUndefined(process.env.AI_SUPPORTS_IMAGES),
     MAX_UPLOAD_SIZE_MB: emptyToUndefined(process.env.MAX_UPLOAD_SIZE_MB),
   });
 
@@ -85,6 +94,7 @@ export function getServerConfig(): ServerConfig {
     aiMaxRetries: env.AI_MAX_RETRIES,
     aiAppUrl: env.AI_APP_URL,
     aiAppTitle: env.AI_APP_TITLE,
+    aiSupportsImages: env.AI_SUPPORTS_IMAGES,
     maxUploadBytes: Math.round(env.MAX_UPLOAD_SIZE_MB * 1024 * 1024),
   };
 

@@ -12,10 +12,11 @@ import { cn } from "@/lib/utils";
  * until the server responds rather than pretending to reach 100%.
  */
 export const PROCESSING_STAGES = [
-  { id: "validating", label: "Validating the file" },
-  { id: "extracting", label: "Extracting text from the PDF" },
-  { id: "analyzing", label: "Reading biomarkers with the AI provider" },
-  { id: "normalizing", label: "Standardizing units and classifying results" },
+  { id: "validating", label: "Validating files" },
+  { id: "reading", label: "Reading report" },
+  { id: "extracting", label: "Extracting biomarkers" },
+  { id: "classifying", label: "Classifying results" },
+  { id: "preparing", label: "Preparing results" },
 ] as const;
 
 export type ProcessingStageId = (typeof PROCESSING_STAGES)[number]["id"];
@@ -30,7 +31,7 @@ export function ProcessingStages({ current }: { current: ProcessingStageId }) {
         <div className="space-y-2 text-center">
           <h2 className="text-base font-semibold">Analyzing your report</h2>
           <p className="text-sm text-muted-foreground">
-            The file is processed on the server and is not stored.
+            Your files are processed on the server and are not stored.
           </p>
         </div>
 

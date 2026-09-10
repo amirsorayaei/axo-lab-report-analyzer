@@ -4,24 +4,31 @@ import { useCallback, useRef, useState } from "react";
 import { FileText, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  ACCEPT_ATTRIBUTE,
+  MAX_FILES,
+  SUPPORTED_FORMAT_LABEL,
+} from "@/lib/upload/formats";
 import { cn } from "@/lib/utils";
 
 export function UploadDropzone({
   onSelect,
   maxUploadMb,
+  maxTotalMb,
   disabled,
 }: {
-  onSelect: (file: File) => void;
+  onSelect: (files: File[]) => void;
   maxUploadMb: number;
+  maxTotalMb: number;
   disabled?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const handleFiles = useCallback(
-    (files: FileList | null) => {
-      const file = files?.[0];
-      if (file) onSelect(file);
+    (list: FileList | null) => {
+      const files = Array.from(list ?? []);
+      if (files.length > 0) onSelect(files);
     },
     [onSelect],
   );
@@ -56,8 +63,14 @@ export function UploadDropzone({
             Upload a laboratory report
           </h2>
           <p className="text-sm text-muted-foreground">
-            Drag a PDF here, or choose a file. Text-based PDF only, up to{" "}
-            {maxUploadMb} MB.
+            Drag your files here, or choose them. {SUPPORTED_FORMAT_LABEL}, up to{" "}
+            {MAX_FILES} files, {maxUploadMb} MB each and {maxTotalMb} MB in total.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            You can select several files at once — they are analysed together as
+            the ordered pages of{" "}
+            <span className="font-medium text-foreground">one report</span> for one
+            patient.
           </p>
         </div>
 
@@ -67,15 +80,16 @@ export function UploadDropzone({
           disabled={disabled}
         >
           <Upload aria-hidden />
-          Choose PDF
+          Choose files
         </Button>
 
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf,.pdf"
+          multiple
+          accept={ACCEPT_ATTRIBUTE}
           className="sr-only"
-          aria-label="Laboratory report PDF"
+          aria-label="Laboratory report files"
           disabled={disabled}
           onChange={(event) => {
             handleFiles(event.target.files);

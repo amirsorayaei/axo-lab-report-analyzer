@@ -2,13 +2,18 @@
 
 import {
   AlertTriangle,
+  Copy,
   CreditCard,
   FileWarning,
+  Files,
   Gauge,
+  ImageOff,
   KeyRound,
   RotateCcw,
   ScanLine,
+  SearchX,
   TimerOff,
+  UserX,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -23,6 +28,26 @@ import type { ErrorCode } from "@/lib/domain/errors";
  */
 const PRESENTATION: Record<ErrorCode, { title: string; icon: LucideIcon; action: string }> =
   {
+    NO_FILES: {
+      title: "No file was received",
+      icon: FileWarning,
+      action: "Select at least one report file and try again.",
+    },
+    TOO_MANY_FILES: {
+      title: "Too many files",
+      icon: Files,
+      action: "Remove some files so that at most 8 are analysed as one report.",
+    },
+    TOTAL_UPLOAD_TOO_LARGE: {
+      title: "The selection is too large",
+      icon: Files,
+      action: "Remove or replace some files so the combined size stays under 30 MB.",
+    },
+    DUPLICATE_FILE: {
+      title: "The same file was selected twice",
+      icon: Copy,
+      action: "Remove the duplicate. Each file should be a different part of the report.",
+    },
     INVALID_FILE_TYPE: {
       title: "That file is not a PDF",
       icon: FileWarning,
@@ -53,6 +78,35 @@ const PRESENTATION: Record<ErrorCode, { title: string; icon: LucideIcon; action:
       icon: ScanLine,
       action:
         "This looks like a scan or a photo. Optical character recognition is not enabled in this version, so please upload a text-based PDF.",
+    },
+    INVALID_IMAGE_SIGNATURE: {
+      title: "That file is not a valid image",
+      icon: ImageOff,
+      action:
+        "The contents do not match the extension. Re-export or re-take the photo as JPEG, PNG or WebP.",
+    },
+    IMAGE_CORRUPTED: {
+      title: "The image could not be read",
+      icon: ImageOff,
+      action: "The file may be damaged. Try re-exporting or re-taking the photo.",
+    },
+    NO_LAB_DATA_FOUND: {
+      title: "No laboratory results found",
+      icon: SearchX,
+      action:
+        "Check that every file is a page of a laboratory report, and that photographs are sharp, upright and well lit.",
+    },
+    CONFLICTING_PATIENTS: {
+      title: "These files look like different patients",
+      icon: UserX,
+      action:
+        "All files in one analysis must be parts of a single report for a single patient. Remove the unrelated files and try again.",
+    },
+    PROVIDER_NO_IMAGE_SUPPORT: {
+      title: "The configured model cannot read images",
+      icon: ImageOff,
+      action:
+        "Upload text-based PDFs instead, or ask an administrator to configure a model with image input support.",
     },
     AI_NOT_CONFIGURED: {
       title: "No AI provider is configured",
@@ -112,12 +166,15 @@ export function ErrorPanel({
   hint,
   onRetry,
   onReset,
+  onBackToSelection,
 }: {
   code: ErrorCode;
   message: string;
   hint?: string;
   onRetry?: () => void;
   onReset: () => void;
+  /** Offered when the fix is to edit the selection rather than start over. */
+  onBackToSelection?: () => void;
 }) {
   const presentation = PRESENTATION[code] ?? PRESENTATION.INTERNAL_ERROR;
   const Icon = presentation.icon;
@@ -142,8 +199,13 @@ export function ErrorPanel({
             Try again
           </Button>
         ) : null}
+        {onBackToSelection ? (
+          <Button type="button" variant="outline" onClick={onBackToSelection}>
+            Edit selection
+          </Button>
+        ) : null}
         <Button type="button" variant="outline" onClick={onReset}>
-          Choose another file
+          Choose other files
         </Button>
       </div>
     </div>

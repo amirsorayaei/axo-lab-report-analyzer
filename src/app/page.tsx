@@ -2,6 +2,7 @@ import { Activity, ShieldCheck } from "lucide-react";
 
 import { AnalyzerShell } from "@/components/analyzer/analyzer-shell";
 import { getServerConfig } from "@/lib/config";
+import { MAX_TOTAL_UPLOAD_BYTES } from "@/lib/upload/formats";
 
 // Read the upload limit from the runtime environment rather than baking the
 // build-time value into a static page.
@@ -38,13 +39,17 @@ export default function HomePage() {
             Understand a laboratory report in one upload
           </h1>
           <p className="text-sm text-muted-foreground sm:text-base">
-            Every biomarker is extracted from the PDF, translated into standardized
-            English names and units, and classified strictly against the ranges the
-            report itself prints.
+            Upload the pages of one report — PDFs, photos or screenshots. Every
+            biomarker is extracted, translated into standardized English names and
+            units, and classified strictly against the ranges the report itself
+            prints.
           </p>
         </div>
 
-        <AnalyzerShell maxUploadMb={maxUploadMb} />
+        <AnalyzerShell
+          maxUploadMb={maxUploadMb}
+          maxTotalMb={Math.round(MAX_TOTAL_UPLOAD_BYTES / (1024 * 1024))}
+        />
       </main>
 
       <footer className="border-t bg-card">

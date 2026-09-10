@@ -68,6 +68,13 @@ export const RawPatientSchema = z.object({
   collectionDate: z.string().nullable(),
   laboratoryName: z.string().nullable(),
   reportId: z.string().nullable(),
+  /**
+   * Set by the model only when the uploaded sources clearly identify different
+   * people (different names, document numbers or dates of birth). Every source
+   * is supposed to be one part of one report for one patient, so this is the
+   * one channel the model has to report that the assumption is violated.
+   */
+  conflictingSources: z.boolean(),
 });
 export type RawPatient = z.infer<typeof RawPatientSchema>;
 
@@ -125,6 +132,20 @@ export type AnalyzedBiomarker = {
   notes: string | null;
 };
 
+export type ReportSourceSummary = {
+  fileCount: number;
+  pdfCount: number;
+  imageCount: number;
+  pdfPageCount: number;
+  sourceTypes: Array<"text" | "image">;
+  files: Array<{
+    sourceIndex: number;
+    fileName: string;
+    kind: "text" | "image";
+    pageCount: number | null;
+  }>;
+};
+
 export type AnalysisSummary = {
   total: number;
   optimal: number;
@@ -147,7 +168,10 @@ export type PatientSummary = {
 export type AnalysisResult = {
   patient: PatientSummary;
   reportLanguage: string | null;
+  /** Total pages across every uploaded PDF. */
   pageCount: number;
+  /** What the analysis was built from, for display and auditing. */
+  sources: ReportSourceSummary;
   biomarkers: AnalyzedBiomarker[];
   summary: AnalysisSummary;
   /** `mock` renders a prominent demo-mode banner in the UI. */

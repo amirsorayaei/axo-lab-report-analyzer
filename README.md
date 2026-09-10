@@ -3,7 +3,8 @@
 A single-page web tool that turns a laboratory PDF report into a structured,
 standardized, classified list of biomarkers.
 
-Upload a PDF, and the app extracts every result it can find, translates the
+Upload the pages of one report — text PDFs, photos or screenshots, up to eight
+files at once — and the app extracts every result it can find, translates the
 biomarker names and units into a consistent English vocabulary, and labels each
 result as **optimal**, **normal**, **out of range** or **needs review** — using
 nothing but the patient facts and the ranges that are printed on that report.
@@ -15,12 +16,14 @@ Built for the Axo Longevity technical challenge.
 ## Table of contents
 
 - [Challenge interpretation](#challenge-interpretation)
+- [Supported formats and limits](#supported-formats-and-limits)
 - [Features and user flow](#features-and-user-flow)
 - [Architecture and data flow](#architecture-and-data-flow)
 - [Local setup](#local-setup)
 - [Environment variables](#environment-variables)
 - [AI provider modes](#ai-provider-modes)
 - [PDF processing and the structured schema](#pdf-processing-and-the-structured-schema)
+- [Image processing and why not Tesseract.js](#image-processing-and-why-not-tesseractjs)
 - [Normalization and classification rules](#normalization-and-classification-rules)
 - [Error handling](#error-handling)
 - [Privacy and security](#privacy-and-security)
@@ -59,22 +62,53 @@ If a report prints no reference range for a biomarker, the result is
 
 ---
 
+## Supported formats and limits
+
+| | |
+| --- | --- |
+| Formats | **PDF**, **JPEG/JPG**, **PNG**, **WebP** |
+| Files per analysis | **8** |
+| Per file | **10 MB** (`MAX_UPLOAD_SIZE_MB`) |
+| Combined, before normalization | **30 MB** |
+| Patients per analysis | **1** |
+
+All files in one analysis are treated as **ordered parts of a single report for a
+single patient**, in the order the user arranged them.
+
+**Deliberately not supported:** HEIC, SVG, GIF, DOCX, and multiple patients in
+one analysis. HEIC needs a decoder most browsers do not ship; SVG is an
+executable document format and a real XSS/SSRF vector, so accepting one from an
+untrusted user to feed a model would be careless; GIF and DOCX are not laboratory
+report formats. Limits and formats live in
+[`src/lib/upload/formats.ts`](src/lib/upload/formats.ts) and are enforced on the
+server — the client checks are only for fast feedback.
+
+---
+
 ## Features and user flow
 
-**1. Upload** — drag-and-drop or file picker, with the size limit shown up front.
+**1. Upload** — drag-and-drop or file picker, both accepting **multiple files at
+once**, with the formats and all three limits stated up front and an explicit
+note that everything selected is treated as one report.
 
-**2. Selected file** — name, size, remove, and an explicit *Analyze report*
-action. Nothing is uploaded until the user asks for it.
+**2. Selected files** — an ordered list. Each row shows its position ("Part 3"),
+file name, size and format badge, with a per-file remove. *Add more* **appends**
+to the selection rather than replacing it, exact duplicates (same name, size and
+type) are silently skipped, *Remove all* clears everything, and the running total
+is shown against the 30 MB limit. Nothing is uploaded until *Analyze report*.
 
-**3. Processing** — four honest stages that mirror what the server actually does:
-validating, extracting text, analyzing, normalizing. The client cannot observe
-server-side progress, so transitions are time-based estimates and the last stage
-stays busy until the response arrives. No stage is ever reported as complete
-based on a guess.
+**3. Processing** — five format-neutral stages that mirror what the server
+actually does: validating files, reading report, extracting biomarkers,
+classifying results, preparing results. The client cannot observe server-side
+progress, so transitions are time-based estimates and the last stage stays busy
+until the response arrives. No stage is ever reported as complete based on a
+guess.
 
 **4. Results**
 - Report summary: patient age (with a note when it was derived from a date of
-  birth), sex, laboratory, report date, report id, page count, detected language.
+  birth), sex, laboratory, report date, and a **sources** breakdown — how many
+  files were analysed, how many PDF pages, how many images — plus the report id
+  and detected language.
 - Five count cards: total, optimal, normal, out of range, needs review.
 - A searchable, status-filterable biomarker table showing the standardized name
   with the original name underneath, the result in the standardized unit, the
@@ -94,24 +128,27 @@ and a next step. See [Error handling](#error-handling).
 ## Architecture and data flow
 
 ```
-Browser                          Server (Route Handler)              Provider
-───────                          ──────────────────────              ────────
- select PDF
- POST multipart  ──────────────▶ validate
-                                   extension · MIME · size
-                                   · %PDF- signature
-                                 extractPdfText()
-                                   pdfjs-dist, page by page,
-                                   layout-aware line rebuild
-                                 getAiProvider()  ────────────────▶  transcribe
-                                                                     (JSON only)
-                                 RawExtractionSchema.parse()  ◀────  structured JSON
-                                 analyzeExtraction()
-                                   name standardization
-                                   unit standardization
-                                   age derivation
-                                   classification
- render results  ◀────────────── AnalyzeResponse (JSON)
+Browser                        Server (Route Handler)                Provider
+───────                        ──────────────────────                ────────
+ select 1..8 files
+ POST multipart  ───────────▶  validateUploads()
+   files, files, files           count · combined size · duplicates
+                                 per file: extension · MIME
+                                 · size · magic bytes
+                               buildReportInputs()   (order preserved)
+                                 PDF   -> extractPdfText()  local, pdfjs
+                                 image -> normalizeImage()  sharp
+                               provider.supportsImages gate
+                               getAiProvider()  ─────────────────────▶ one ordered
+                                                                       multimodal
+                                                                       message
+                               RawExtractionSchema.parse()  ◀───────── structured JSON
+                               conflictingSources / empty guards
+                               analyzeExtraction()
+                                 name + unit standardization
+                                 age derivation
+                                 classification
+ render results  ◀───────────  AnalyzeResponse (JSON)
 ```
 
 Nothing on this path is written to disk, a database, a cache or a log.
@@ -143,7 +180,13 @@ src/
     │   ├── biomarker-names.ts      Name dictionary
     │   ├── analyze.ts              Orchestration
     │   └── errors.ts               Typed error codes
-    ├── pdf/                        extract.ts, validate.ts (server only)
+    ├── pdf/
+    │   └── extract.ts              pdfjs text extraction (server only)
+    ├── upload/                     Multi-file intake
+    │   ├── formats.ts              Formats + limits (shared with the client)
+    │   ├── validate.ts             Per-file and whole-selection validation
+    │   ├── normalize-image.ts      EXIF, metadata stripping, resize, data URL
+    │   └── report-input.ts         The ordered `ReportInput` union
     ├── config.ts                   Validated server environment (server only)
     ├── api-types.ts                Shared request/response contract
     └── status-presentation.ts      Status → label/colour, shared by all views
@@ -468,6 +511,104 @@ against it regardless of what the provider promised.
 
 ---
 
+## Image processing and why not Tesseract.js
+
+### The decision
+
+Photographs and screenshots are sent to the model **as images**, not converted to
+text by an OCR library first. No OCR dependency is used in this iteration.
+
+The reason is structural, not convenience. A laboratory report is a *table*, and
+everything this app does depends on one relationship holding: a value, its unit,
+its abnormal flag and its reference range all belong to the biomarker on the same
+visual row. Classic OCR flattens a page into a stream of words with bounding
+boxes and discards that relationship; rebuilding it means re-implementing column
+detection, and every mistake pairs a value with a neighbouring row's range —
+producing a confidently wrong status, which is this app's worst failure mode.
+
+`openai/gpt-5.6-luna` accepts image input directly (OpenRouter reports its
+modality as `text+image+file->text`) and reads the table as a table. Adding
+Tesseract.js would mean shipping a ~10 MB WASM bundle and language data, paying
+its runtime cost, and then handing the model a *worse* representation than the
+image it can already read. It would add a dependency in order to lose
+information.
+
+**Text PDFs are unaffected.** They still go through pdfjs locally, and the
+original PDF is never uploaded to the provider when local extraction succeeds.
+OCR is only ever a question for pixels.
+
+### The normalization pipeline
+
+[`normalize-image.ts`](src/lib/upload/normalize-image.ts), in this order:
+
+1. **Signature check** — the leading bytes must match JPEG, PNG or WebP. The
+   extension and the browser MIME type are client-supplied and forgeable.
+2. **EXIF orientation applied, then dropped** (`sharp().rotate()` with no
+   argument). Phone photos are routinely stored sideways with an orientation
+   flag, and a model reading a sideways table produces nonsense.
+3. **All metadata stripped** — EXIF, GPS, XMP, ICC, embedded thumbnails. A photo
+   of a lab report taken on a phone routinely carries the patient's home
+   coordinates; none of that should reach a third party.
+4. **Resized only if needed**, longest side capped at **2400 px**, never
+   upscaled. Both axes are capped, because step 2 swaps width and height for
+   sideways photos.
+5. **Encoded as a Base64 data URL.** PNG stays lossless (portal screenshots have
+   thin glyphs that JPEG artefacts damage); everything else becomes quality-82
+   JPEG to bound token cost.
+
+The bytes, the data URL and the prompt exist only for the lifetime of the
+request. None is logged or written to disk.
+
+### The multimodal message
+
+One ordered user message. A lead instruction, then every source in the order the
+user selected, each introduced by a labelled text block so the model can
+attribute what it reads:
+
+```jsonc
+{ "role": "user", "content": [
+  { "type": "text", "text": "The laboratory report below is supplied as 4 ordered source(s)..." },
+  { "type": "text", "text": "===== SOURCE 1 — FILE \"report.pdf\" — PDF PAGE 1 — PAGE 1 =====\n..." },
+  { "type": "text", "text": "===== SOURCE 2 — FILE \"photo.jpg\" — IMAGE — PAGE 2 =====\n..." },
+  { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,..." } }
+]}
+```
+
+Page numbers run continuously across every source, so `sourcePage` stays a single
+unambiguous number and the flat extraction schema is unchanged.
+
+The prompt tells the model that all sources are ordered parts of one report for
+one patient, to combine information across them, to keep row relationships intact
+when reading an image, to extract age and sex only when explicitly printed, never
+to guess anything unreadable, to drop **exact** duplicate rows created by
+overlapping pages while **keeping** repeated biomarkers that differ in value,
+unit, date or reference range, and to return only the existing strict schema.
+
+### OCR as a production enhancement
+
+Dedicated OCR is worth adding later, not as a replacement for vision but
+**alongside** it:
+
+- **Cross-validation.** Run OCR and the vision model over the same image and
+  compare the numeric values. Agreement is a strong signal; disagreement should
+  drive a biomarker to `needs_review` instead of being silently resolved.
+- **Real confidence scoring.** The model's `confidence` today is self-reported
+  and therefore weak. OCR engines emit per-character and per-word confidence from
+  the actual raster, which is a genuine measurement.
+- **Scanned PDFs.** Rendering an image-only PDF page to a raster and running OCR
+  (or feeding the raster to the vision model) is the natural fix for the
+  `PDF_TEXT_EXTRACTION_FAILED` path. The extension point is a single place in
+  `extractPdfText`.
+- **Cost and privacy control.** OCR runs locally. For deployments that cannot
+  send images to a third party, a local OCR pass plus a text-only model keeps
+  pixels inside the perimeter.
+
+In production this would most likely be AWS Textract or Google Document AI rather
+than Tesseract.js — both are table-aware and return structured cells, which is
+exactly the property Tesseract lacks.
+
+---
+
 ## Normalization and classification rules
 
 ### Biomarker names
@@ -575,12 +716,21 @@ Every failure resolves to exactly one typed code. The API always answers with
 
 | Code | HTTP | Cause | What the user sees |
 | --- | --- | --- | --- |
-| `INVALID_FILE_TYPE` | 415 | Not a `.pdf`, wrong MIME, or no file field | "That file is not a PDF" |
-| `EMPTY_FILE` | 400 | Zero bytes | "The file is empty" |
+| `NO_FILES` | 400 | No `files` field in the request | "No file was received" |
+| `TOO_MANY_FILES` | 413 | More than 8 files | "Remove some files" |
+| `TOTAL_UPLOAD_TOO_LARGE` | 413 | Combined size over 30 MB | Limit and actual total |
+| `DUPLICATE_FILE` | 400 | Same name, size and type twice | Names the duplicate |
+| `INVALID_FILE_TYPE` | 415 | Unsupported extension or contradictory MIME | Names the file and the supported formats |
+| `EMPTY_FILE` | 400 | Zero bytes | Names the file |
 | `FILE_TOO_LARGE` | 413 | Over `MAX_UPLOAD_SIZE_MB` | Limit and actual size |
 | `INVALID_PDF_SIGNATURE` | 415 | Missing `%PDF-` header | "This file is not a valid PDF" |
+| `INVALID_IMAGE_SIGNATURE` | 415 | Bytes do not match JPEG/PNG/WebP | "That file is not a valid image" |
+| `IMAGE_CORRUPTED` | 422 | The decoder could not read the image | "The image could not be read" |
 | `PDF_CORRUPTED` | 422 | pdfjs could not open it | "Damaged, encrypted or password protected" |
 | `PDF_TEXT_EXTRACTION_FAILED` | 422 | Scan / image-only PDF | Explains OCR is not enabled and asks for a text PDF |
+| `NO_LAB_DATA_FOUND` | 422 | Zero biomarkers extracted | Asks for sharp, upright, well-lit pages |
+| `CONFLICTING_PATIENTS` | 422 | Sources identify different people | Asks to remove unrelated files |
+| `PROVIDER_NO_IMAGE_SUPPORT` | 503 | Images uploaded, `AI_SUPPORTS_IMAGES=false` | "The configured model cannot read images" |
 | `AI_NOT_CONFIGURED` | 503 | `AI_PROVIDER=disabled` | How to enable demo mode |
 | `AI_MISCONFIGURED` | 500 | Live provider missing settings | Which variables are missing |
 | `AI_MISCONFIGURED` | 500 | Provider returned 401/403 — bad or missing key | "Check that `AI_API_KEY` is valid" |
@@ -591,6 +741,20 @@ Every failure resolves to exactly one typed code. The API always answers with
 | `AI_REQUEST_FAILED` | 502 | Transport failure or upstream 5xx | "Try again in a moment" |
 | `AI_INVALID_RESPONSE` | 502 | Not JSON, or failed Zod validation | Explains it was rejected, not shown |
 | `INTERNAL_ERROR` | 500 | Anything unexpected | Generic message |
+
+**Any invalid file rejects the whole request.** A partially analysed report would
+silently omit results, which is more dangerous than a clear failure. Error
+messages name the offending file and its position so the user knows which row to
+remove.
+
+`PROVIDER_NO_IMAGE_SUPPORT` is checked **before** the provider call, so an image
+upload against a text-only model costs nothing.
+
+`CONFLICTING_PATIENTS` needs one signal the model must supply, so
+`RawPatientSchema` carries a single extra boolean, `conflictingSources`. The model
+sets it only when the sources print different names, document numbers or dates of
+birth. It is the one field added to the extraction schema for this feature; the
+structure is otherwise unchanged.
 
 Retries apply to `AI_REQUEST_FAILED` and `AI_RATE_LIMITED` only. A timeout, a bad
 key, exhausted credits, an unroutable request or an invalid response are not
@@ -611,9 +775,16 @@ code so a user can quote it without pasting any report content.
 
 - All processing happens on the server. The browser never talks to an AI
   provider, and the API key never leaves the server.
-- The PDF bytes, the extracted text and the analysis exist only for the lifetime
-  of the request. There is no database, no object storage, no cache, no
-  session, no analytics and no telemetry.
+- The uploaded bytes, the extracted text, the normalized image data URLs, the
+  prompt and the analysis exist only for the lifetime of the request. There is no
+  database, no object storage, no cache, no session, no analytics and no
+  telemetry. Base64 image data is never logged or written to disk.
+- **Image metadata is destroyed before anything leaves the server.** EXIF, GPS,
+  XMP, ICC and embedded thumbnails are stripped during normalization, so a phone
+  photo of a report does not carry the patient's location to the provider.
+- **Text PDFs are never uploaded to the provider.** They are read locally with
+  pdfjs and only the extracted text is sent. Images necessarily are sent, which
+  is a strictly larger disclosure — see the warning in the provider section.
 - Only the error *code* is logged, and only for unexpected failures. Error
   messages can quote report text, so they are returned to the caller but never
   written to a log. pdfjs verbosity is set to zero so font warnings cannot write
@@ -663,6 +834,22 @@ Run `npm run dev`, then work through these.
 - [ ] Switching `AI_PROVIDER` back to `mock` restores demo mode with no other
       change and no credit spend.
 
+**Multi-file selection**
+
+- [ ] Selecting several files at once lists them all, numbered, in the order
+      chosen, each with name, size and format badge.
+- [ ] Dropping several files at once behaves identically.
+- [ ] *Add more* **appends** to the selection instead of replacing it.
+- [ ] Selecting a file already in the list silently skips it (no duplicate row).
+- [ ] Removing one row renumbers the remaining parts and keeps their order.
+- [ ] *Remove all* returns to the empty upload state.
+- [ ] Adding a 9th file is refused, and the list explains the 8-file maximum.
+- [ ] A selection over 30 MB shows the inline warning and disables *Analyze*.
+- [ ] A mixed PDF + JPEG + PNG + WebP selection analyses successfully, and the
+      results header reads "extracted from N files".
+- [ ] The Sources card reports file count, PDF pages and image count.
+- [ ] One PDF on its own still works exactly as before.
+
 **Upload validation**
 
 - [ ] A `.txt` file → "That file is not a PDF".
@@ -671,8 +858,16 @@ Run `npm run dev`, then work through these.
 - [ ] A zero-byte file → "The file is empty".
 - [ ] A file larger than `MAX_UPLOAD_SIZE_MB` → limit and actual size shown.
 - [ ] A truncated or random-bytes PDF → "The PDF could not be opened".
-- [ ] An image-only / scanned PDF → `PDF_TEXT_EXTRACTION_FAILED` with the OCR
-      explanation.
+- [ ] An image-only / scanned PDF → `PDF_TEXT_EXTRACTION_FAILED` naming that
+      file, and suggesting a photo or screenshot instead.
+- [ ] A `.gif` or `.svg` → "not a supported format", naming the file.
+- [ ] A PNG renamed to `.jpg` → `INVALID_IMAGE_SIGNATURE`.
+- [ ] A JPEG with random bytes after the header → `IMAGE_CORRUPTED`.
+- [ ] One bad file among several good ones rejects the whole request and names
+      the bad file and its position.
+- [ ] A sideways phone photo is analysed upright (EXIF orientation applied).
+- [ ] With `AI_SUPPORTS_IMAGES=false`, an image upload is refused before any
+      provider request; a PDF-only upload still reaches the provider.
 
 **Happy path (sample report, demo mode)**
 
@@ -706,14 +901,31 @@ Run `npm run dev`, then work through these.
 
 - [ ] The Network tab shows exactly one request to `/api/analyze`; no request
       goes from the browser to any AI provider.
-- [ ] The server log contains no report content and no API key.
+- [ ] The server log contains no report content, no file names, no Base64 image
+      data and no API key.
 
 ---
 
 ## Limitations and tradeoffs
 
-- **No OCR.** Scanned and photographed reports are rejected with a clear message
-  instead of being processed badly. The extension point is documented above.
+- **No OCR dependency.** Photographs and screenshots go to the vision model
+  directly; see [Image processing](#image-processing-and-why-not-tesseractjs) for
+  why, and for what dedicated OCR would add later.
+- **Scanned PDFs are still rejected.** A PDF with no text layer cannot be
+  analysed, because PDFs are read locally and never uploaded. The workaround is
+  to upload a photo or screenshot of the pages instead, which the error message
+  says. Rendering PDF pages to rasters is the obvious next step and is not done
+  here.
+- **Image analysis costs more and is less reliable than text.** A 2400 px page
+  is worth far more tokens than its text, and a blurred or skewed photo yields
+  worse transcription. Text PDFs remain the best input by a wide margin.
+- **Duplicate detection is metadata-based.** Name, size and type. The same page
+  saved twice under different names is not detected as a duplicate before upload;
+  the model is instructed to drop exact duplicate rows, but that is a model
+  behaviour, not a guarantee.
+- **`conflictingSources` is model-reported.** A mixed-patient upload is only
+  caught if the model notices and sets the flag. It is a safety net, not a
+  guarantee — the app cannot verify identity across sources on its own.
 - **Extraction quality is the model's.** A wrong transcription produces a wrong
   status, deterministically. The detail Sheet shows the model's confidence, the
   source page and everything as printed so a result can be checked against the

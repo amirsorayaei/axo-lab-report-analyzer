@@ -43,6 +43,7 @@ export function getAiProvider(): AiProvider {
         maxRetries: config.aiMaxRetries,
         appUrl: config.aiAppUrl,
         appTitle: config.aiAppTitle,
+        supportsImages: config.aiSupportsImages,
       });
     }
 

@@ -33,7 +33,10 @@ type TextItemLike = {
   hasEOL: boolean;
 };
 
-export async function extractPdfText(bytes: Uint8Array): Promise<PdfExtraction> {
+export async function extractPdfText(
+  bytes: Uint8Array,
+  fileName: string,
+): Promise<PdfExtraction> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
   const loadingTask = pdfjs.getDocument({
@@ -50,7 +53,7 @@ export async function extractPdfText(bytes: Uint8Array): Promise<PdfExtraction> 
   try {
     document = await loadingTask.promise;
   } catch (error) {
-    throw new AppError("PDF_CORRUPTED", "This PDF could not be opened.", {
+    throw new AppError("PDF_CORRUPTED", `"${fileName}" could not be opened.`, {
       hint: "The file may be damaged, encrypted or password protected.",
       cause: error,
     });
@@ -77,9 +80,9 @@ export async function extractPdfText(bytes: Uint8Array): Promise<PdfExtraction> 
     if (totalCharacters < MIN_USABLE_CHARACTERS) {
       throw new AppError(
         "PDF_TEXT_EXTRACTION_FAILED",
-        "No readable text could be extracted from this PDF.",
+        `No readable text could be extracted from "${fileName}".`,
         {
-          hint: "The report looks like a scan or an image-only export. Optical character recognition is not enabled in this version — please upload a text-based PDF exported from the laboratory portal.",
+          hint: "This PDF looks like a scan or an image-only export. PDFs are read locally and are not sent to the AI provider, so a scanned PDF cannot be analysed. Export a text-based PDF from the laboratory portal, or upload a photograph or screenshot of the pages as JPEG, PNG or WebP instead.",
         },
       );
     }
