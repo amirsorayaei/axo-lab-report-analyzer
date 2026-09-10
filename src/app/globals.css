@@ -56,32 +56,36 @@
   --color-status-review-surface: var(--status-review-surface);
 }
 
-/* Axo-inspired health palette: deep teal for trust, electric lime for energy. */
+/*
+ * Calm clinical palette: a warm neutral ground with a restrained navy primary and
+ * a teal accent. Status colours are semantic tokens rather than ad-hoc classes so
+ * a badge, a summary card and a table row always agree.
+ */
 :root {
-  --background: oklch(0.977 0.009 205);
-  --foreground: oklch(0.235 0.035 195);
+  --background: oklch(0.985 0.003 240);
+  --foreground: oklch(0.24 0.024 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.235 0.035 195);
+  --card-foreground: oklch(0.24 0.024 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.035 195);
-  --primary: oklch(0.31 0.064 191);
-  --primary-foreground: oklch(0.985 0.005 190);
-  --secondary: oklch(0.958 0.014 196);
-  --secondary-foreground: oklch(0.3 0.045 192);
-  --muted: oklch(0.956 0.012 202);
-  --muted-foreground: oklch(0.49 0.025 203);
-  --accent: oklch(0.91 0.192 124);
-  --accent-foreground: oklch(0.265 0.052 190);
+  --popover-foreground: oklch(0.24 0.024 250);
+  --primary: oklch(0.36 0.062 252);
+  --primary-foreground: oklch(0.985 0.004 240);
+  --secondary: oklch(0.962 0.006 245);
+  --secondary-foreground: oklch(0.32 0.03 250);
+  --muted: oklch(0.962 0.006 245);
+  --muted-foreground: oklch(0.505 0.018 250);
+  --accent: oklch(0.948 0.017 195);
+  --accent-foreground: oklch(0.34 0.055 210);
   --destructive: oklch(0.552 0.166 26);
-  --border: oklch(0.892 0.018 202);
-  --input: oklch(0.875 0.021 202);
-  --ring: oklch(0.68 0.148 136);
+  --border: oklch(0.912 0.008 245);
+  --input: oklch(0.902 0.009 245);
+  --ring: oklch(0.55 0.075 210);
   --chart-1: oklch(0.55 0.082 200);
   --chart-2: oklch(0.36 0.062 252);
   --chart-3: oklch(0.62 0.104 75);
   --chart-4: oklch(0.552 0.166 26);
   --chart-5: oklch(0.62 0.02 250);
-  --radius: 0.75rem;
+  --radius: 0.625rem;
   --sidebar: oklch(0.975 0.005 245);
   --sidebar-foreground: oklch(0.24 0.024 250);
   --sidebar-primary: oklch(0.36 0.062 252);
@@ -91,8 +95,8 @@
   --sidebar-border: oklch(0.912 0.008 245);
   --sidebar-ring: oklch(0.55 0.075 210);
 
-  --status-optimal: oklch(0.42 0.09 169);
-  --status-optimal-surface: oklch(0.955 0.035 163);
+  --status-optimal: oklch(0.47 0.083 192);
+  --status-optimal-surface: oklch(0.955 0.023 192);
   --status-normal: oklch(0.44 0.048 250);
   --status-normal-surface: oklch(0.955 0.009 250);
   --status-out: oklch(0.5 0.152 26);
@@ -150,11 +154,6 @@
   }
   body {
     @apply bg-background text-foreground;
-    background-image: linear-gradient(
-      to bottom,
-      color-mix(in oklch, var(--accent) 7%, transparent),
-      transparent 22rem
-    );
   }
   html {
     @apply font-sans;
