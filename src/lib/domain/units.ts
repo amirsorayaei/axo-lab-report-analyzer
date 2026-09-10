@@ -7,11 +7,19 @@
  * status because of a conversion — the conversion exists so the UI can show one
  * consistent unit vocabulary.
  *
- * Only unit-intrinsic factors live here (mass/volume decimal scaling and
- * notation aliases). Molar conversions such as mg/dL <-> mmol/L are deliberately
- * NOT implemented: they need an analyte-specific molar mass, which is medical
- * knowledge this app is not allowed to invent. Such units are passed through
- * unchanged and remain classifiable against their own printed range.
+ * Most entries are notation aliases with a factor of 1 (`x10³/mm³` and `10^3/µL`
+ * are the same quantity, because 1 mm³ = 1 µL). Magnitude-changing factors are
+ * limited to rescalings within one mass-concentration family where the target is
+ * unambiguously the conventional unit.
+ *
+ * Two conversions are deliberately NOT implemented:
+ *   - molar conversions (mg/dL <-> mmol/L) need an analyte-specific molar mass,
+ *     which is medical knowledge this app is not allowed to invent;
+ *   - rescalings where both units are conventional for different analytes
+ *     (mg/L and mg/dL, g/L and g/dL) would only trade one familiar unit for
+ *     another and are left alone.
+ * Such units pass through unchanged and stay classifiable against their own
+ * printed range.
  */
 
 export type UnitStandardization = {
@@ -49,8 +57,9 @@ const UNIT_TABLE: Record<string, UnitDef> = {
   "g/dl": { canonical: "g/dL", factor: 1 },
   "g/l": { canonical: "g/L", factor: 1 },
   "mg/dl": { canonical: "mg/dL", factor: 1 },
-  "mg/l": { canonical: "mg/dL", factor: 0.1 },
+  "mg/l": { canonical: "mg/L", factor: 1 },
   "ug/dl": { canonical: "µg/dL", factor: 1 },
+  // µg/L and ng/mL are the same quantity, spelled differently.
   "ug/l": { canonical: "ng/mL", factor: 1 },
   "ug/ml": { canonical: "µg/mL", factor: 1 },
   "ng/ml": { canonical: "ng/mL", factor: 1 },
