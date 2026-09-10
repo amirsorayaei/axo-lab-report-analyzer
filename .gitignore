@@ -43,3 +43,7 @@ next-env.d.ts
 # Local sample inputs — never commit (may contain PHI)
 .local-inputs/
 !.env.example
+
+# Local-only scratch scripts
+*.local.ts
+*.local.mjs
