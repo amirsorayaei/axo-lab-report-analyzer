@@ -18,8 +18,17 @@ const EnvSchema = z.object({
   AI_API_KEY: z.string().optional(),
   AI_BASE_URL: z.string().url().optional(),
   AI_MODEL: z.string().optional(),
+  // `omit` sends no temperature at all. Required for reasoning models such as
+  // openai/gpt-5.6-luna, which do not accept the parameter — sending it while
+  // OpenRouter is asked to require parameters can leave no eligible provider.
+  AI_TEMPERATURE: z
+    .union([z.literal("omit"), z.coerce.number().min(0).max(2)])
+    .default(0),
   AI_TIMEOUT_MS: z.coerce.number().int().positive().max(300_000).default(60_000),
   AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
+  // Optional OpenRouter attribution headers. Never required for a request.
+  AI_APP_URL: z.string().url().default("http://localhost:3000"),
+  AI_APP_TITLE: z.string().default("Axo Lab Report Analyzer"),
   MAX_UPLOAD_SIZE_MB: z.coerce.number().positive().max(50).default(10),
 });
 
@@ -28,8 +37,12 @@ export type ServerConfig = {
   aiApiKey?: string;
   aiBaseUrl?: string;
   aiModel?: string;
+  /** `null` means: send no temperature field at all. */
+  aiTemperature: number | null;
   aiTimeoutMs: number;
   aiMaxRetries: number;
+  aiAppUrl: string;
+  aiAppTitle: string;
   maxUploadBytes: number;
 };
 
@@ -43,8 +56,11 @@ export function getServerConfig(): ServerConfig {
     AI_API_KEY: emptyToUndefined(process.env.AI_API_KEY),
     AI_BASE_URL: emptyToUndefined(process.env.AI_BASE_URL),
     AI_MODEL: emptyToUndefined(process.env.AI_MODEL),
+    AI_TEMPERATURE: emptyToUndefined(process.env.AI_TEMPERATURE),
     AI_TIMEOUT_MS: emptyToUndefined(process.env.AI_TIMEOUT_MS),
     AI_MAX_RETRIES: emptyToUndefined(process.env.AI_MAX_RETRIES),
+    AI_APP_URL: emptyToUndefined(process.env.AI_APP_URL),
+    AI_APP_TITLE: emptyToUndefined(process.env.AI_APP_TITLE),
     MAX_UPLOAD_SIZE_MB: emptyToUndefined(process.env.MAX_UPLOAD_SIZE_MB),
   });
 
@@ -64,8 +80,11 @@ export function getServerConfig(): ServerConfig {
     aiApiKey: env.AI_API_KEY,
     aiBaseUrl: env.AI_BASE_URL,
     aiModel: env.AI_MODEL,
+    aiTemperature: env.AI_TEMPERATURE === "omit" ? null : env.AI_TEMPERATURE,
     aiTimeoutMs: env.AI_TIMEOUT_MS,
     aiMaxRetries: env.AI_MAX_RETRIES,
+    aiAppUrl: env.AI_APP_URL,
+    aiAppTitle: env.AI_APP_TITLE,
     maxUploadBytes: Math.round(env.MAX_UPLOAD_SIZE_MB * 1024 * 1024),
   };
 

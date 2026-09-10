@@ -6,6 +6,7 @@ import {
   buildExtractionUserPrompt,
 } from "@/lib/ai/prompt";
 import { AppError } from "@/lib/domain/errors";
+import type { ErrorCode } from "@/lib/domain/errors";
 import { RawExtractionSchema } from "@/lib/domain/schemas";
 import type { AiProvider, ExtractionRequest } from "@/lib/ai/types";
 import type { RawExtraction } from "@/lib/domain/schemas";
@@ -14,9 +15,27 @@ export type OpenAiCompatibleOptions = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  /** `null` sends no temperature field at all. */
+  temperature: number | null;
   timeoutMs: number;
   maxRetries: number;
+  /** Optional OpenRouter attribution. Never required for a request to succeed. */
+  appUrl: string;
+  appTitle: string;
 };
+
+/**
+ * OpenRouter accepts the OpenAI wire format plus a few extensions. They are
+ * applied only when the base URL points at OpenRouter, so every other
+ * OpenAI-compatible endpoint keeps receiving a plain, portable request body.
+ */
+function isOpenRouter(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname.endsWith("openrouter.ai");
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Talks to any OpenAI-compatible `/chat/completions` endpoint (OpenAI, Azure
@@ -36,8 +55,13 @@ export class OpenAiCompatibleProvider implements AiProvider {
   async extract({ pages, signal }: ExtractionRequest): Promise<RawExtraction> {
     const body = {
       model: this.options.model,
-      // Deterministic transcription, not creative writing.
-      temperature: 0,
+      // Deterministic transcription, not creative writing. Reasoning models such
+      // as openai/gpt-5.6-luna reject `temperature` outright, so it is omitted
+      // when configured as `omit` and `seed` carries the determinism instead.
+      ...(this.options.temperature !== null
+        ? { temperature: this.options.temperature }
+        : {}),
+      seed: 0,
       messages: [
         { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
         { role: "user", content: buildExtractionUserPrompt(pages) },
@@ -50,6 +74,14 @@ export class OpenAiCompatibleProvider implements AiProvider {
           schema: EXTRACTION_JSON_SCHEMA,
         },
       },
+      ...(isOpenRouter(this.options.baseUrl)
+        ? {
+            // Route only to upstream providers that honour every parameter we
+            // send — above all `response_format`. Without this, OpenRouter may
+            // pick a provider that silently ignores the JSON schema.
+            provider: { require_parameters: true },
+          }
+        : {}),
     };
 
     const content = await this.requestWithRetries(body, signal);
@@ -67,9 +99,10 @@ export class OpenAiCompatibleProvider implements AiProvider {
         return await this.request(body, signal);
       } catch (error) {
         const appError = error instanceof AppError ? error : null;
-        // A timeout or an invalid response is not worth replaying; transport and
-        // upstream 5xx failures are.
-        if (!appError || appError.code !== "AI_REQUEST_FAILED") throw error;
+        // Transport failures, upstream 5xx and rate limits are worth replaying.
+        // A timeout, a bad key, exhausted credits, an unroutable request or an
+        // invalid response are not: retrying costs money and cannot help.
+        if (!appError || !RETRYABLE.has(appError.code)) throw error;
         lastError = appError;
         if (attempt < this.options.maxRetries) {
           await delay(400 * (attempt + 1), signal);
@@ -78,6 +111,22 @@ export class OpenAiCompatibleProvider implements AiProvider {
     }
 
     throw lastError ?? new AppError("AI_REQUEST_FAILED", "The AI provider request failed.");
+  }
+
+  private buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.options.apiKey}`,
+    };
+
+    if (isOpenRouter(this.options.baseUrl)) {
+      // Attribution only: these appear on the OpenRouter dashboard and are not
+      // needed for the call to succeed.
+      headers["HTTP-Referer"] = this.options.appUrl;
+      headers["X-Title"] = this.options.appTitle;
+    }
+
+    return headers;
   }
 
   private async request(body: unknown, signal: AbortSignal): Promise<string> {
@@ -90,10 +139,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
     try {
       response = await fetch(`${trimSlash(this.options.baseUrl)}/chat/completions`, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${this.options.apiKey}`,
-        },
+        headers: this.buildHeaders(),
         body: JSON.stringify(body),
         signal: controller.signal,
         cache: "no-store",
@@ -113,11 +159,10 @@ export class OpenAiCompatibleProvider implements AiProvider {
     }
 
     if (!response.ok) {
-      // The status is safe to surface; the response body is not, because a
-      // provider may echo the prompt (and therefore report content) back.
-      throw new AppError("AI_REQUEST_FAILED", "The AI provider returned an error.", {
-        hint: `The provider responded with HTTP ${response.status}.`,
-      });
+      // Mapped from the status code alone. The response body is deliberately
+      // never read, parsed, logged or forwarded: a provider may echo the prompt
+      // — and therefore report content — back inside an error payload.
+      throw errorForStatus(response.status);
     }
 
     const payload: unknown = await response.json().catch(() => null);
@@ -153,6 +198,50 @@ export class OpenAiCompatibleProvider implements AiProvider {
 
     return parsed.data;
   }
+}
+
+const RETRYABLE = new Set<ErrorCode>(["AI_REQUEST_FAILED", "AI_RATE_LIMITED"]);
+
+/**
+ * Maps an upstream status to a typed error. OpenRouter answers 402 when the
+ * account is out of credits, 429 when rate limited, and 404 when no provider
+ * satisfies the requested parameters — which, given `require_parameters: true`,
+ * means the chosen model has no endpoint supporting strict structured output.
+ */
+function errorForStatus(status: number): AppError {
+  if (status === 401 || status === 403) {
+    return new AppError("AI_MISCONFIGURED", "The AI provider rejected the credentials.", {
+      hint: "Check that AI_API_KEY is set to a valid key for this provider.",
+    });
+  }
+
+  if (status === 402) {
+    return new AppError(
+      "AI_INSUFFICIENT_CREDITS",
+      "The AI provider account has insufficient credits.",
+      { hint: "Top up the account, then run the analysis again." },
+    );
+  }
+
+  if (status === 404) {
+    return new AppError(
+      "AI_STRUCTURED_OUTPUT_UNSUPPORTED",
+      "No provider is available for this model with the required options.",
+      {
+        hint: "The configured model may not support strict structured output. Check AI_MODEL, and set AI_TEMPERATURE=omit if the model does not accept a temperature.",
+      },
+    );
+  }
+
+  if (status === 408 || status === 429) {
+    return new AppError("AI_RATE_LIMITED", "The AI provider is rate limiting requests.", {
+      hint: "Too many requests were sent in a short period. Wait a moment and try again.",
+    });
+  }
+
+  return new AppError("AI_REQUEST_FAILED", "The AI provider returned an error.", {
+    hint: `The provider responded with HTTP ${status}.`,
+  });
 }
 
 function issuePaths(issues: Array<{ path: PropertyKey[] }>): string[] {

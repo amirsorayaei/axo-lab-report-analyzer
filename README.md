@@ -183,14 +183,27 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-Out of the box `AI_PROVIDER=disabled`, so the app installs, builds and runs
-without any API key. Uploading a report will validate the file and extract its
-text, then return a controlled `AI_NOT_CONFIGURED` error. To see the full
-experience, switch to demo mode:
+`.env.example` is preconfigured for OpenRouter and ships with `AI_API_KEY`
+deliberately empty, so after copying it you only need to add your key:
+
+```bash
+# .env.local
+AI_API_KEY=sk-or-v1-...
+```
+
+`.env.local` is git-ignored and must never be committed.
+
+**No key, no credits, no problem.** To explore the whole app without spending
+anything, switch to demo mode — it returns the bundled sample extraction and
+labels itself clearly in the UI:
 
 ```bash
 echo "AI_PROVIDER=mock" >> .env.local
 ```
+
+Setting `AI_PROVIDER=disabled` instead makes analysis return a controlled
+`AI_NOT_CONFIGURED` error. The app installs, builds and runs in every one of the
+three modes without an API key.
 
 Other commands:
 
@@ -213,10 +226,13 @@ megabytes) is ever sent to the client.
 | --- | --- | --- |
 | `AI_PROVIDER` | `disabled` | `disabled` \| `mock` \| `openai-compatible` |
 | `AI_API_KEY` | — | Bearer token. Required for `openai-compatible` |
-| `AI_BASE_URL` | — | Base URL, e.g. `https://api.openai.com/v1` |
+| `AI_BASE_URL` | — | Base URL, e.g. `https://openrouter.ai/api/v1` |
 | `AI_MODEL` | — | Model id passed straight through |
+| `AI_TEMPERATURE` | `0` | A number, or `omit` to send no temperature field |
 | `AI_TIMEOUT_MS` | `60000` | Per-request timeout |
-| `AI_MAX_RETRIES` | `1` | Retries for transport/5xx failures only |
+| `AI_MAX_RETRIES` | `1` | Retries for transport, 5xx and rate-limit failures |
+| `AI_APP_URL` | `http://localhost:3000` | Optional OpenRouter `HTTP-Referer` attribution |
+| `AI_APP_TITLE` | `Axo Lab Report Analyzer` | Optional OpenRouter `X-Title` attribution |
 | `MAX_UPLOAD_SIZE_MB` | `10` | Server-enforced upload limit |
 
 Values are validated with Zod at first use. If validation fails, only the
@@ -251,29 +267,118 @@ from your file"** banner naming the provider. The fixture is parsed through
 `RawExtractionSchema` like any other provider response, so demo mode exercises
 the real contract rather than bypassing it.
 
-### `openai-compatible` (live)
+### `openai-compatible` (live) — configured for OpenRouter
 
 ```env
 AI_PROVIDER=openai-compatible
-AI_API_KEY=sk-...
-AI_BASE_URL=https://api.openai.com/v1
-AI_MODEL=gpt-4o-mini
+AI_API_KEY=sk-or-v1-...          # set in .env.local only, never committed
+AI_BASE_URL=https://openrouter.ai/api/v1
+AI_MODEL=openai/gpt-5.6-luna
+AI_TEMPERATURE=omit
 ```
 
-Calls `POST {AI_BASE_URL}/chat/completions` with `temperature: 0` and a
-`json_schema` response format. This works with OpenAI, Azure OpenAI gateways,
-OpenRouter, Groq, Together, vLLM, Ollama and self-hosted gateways — anything that
-speaks the OpenAI chat format. Only `src/lib/ai/openai-compatible.ts` knows about
-the wire format.
+Get a key at <https://openrouter.ai/keys>.
+
+#### Why this model
+
+`openai/gpt-5.6-luna` is chosen for **extraction accuracy and reliable strict
+structured output**, not for lowest price. A laboratory report is a dense,
+multi-column, often non-English document, and this pipeline is deterministic
+downstream of the model — a mis-transcribed value becomes a confidently wrong
+classification, which is the worst failure mode this app has. Paying slightly
+more per report to reduce that risk is the right trade.
+
+Extended reasoning is **not** enabled: no `reasoning` or `reasoning_effort`
+parameter is sent, so the model runs at its default. This task is structured
+transcription, not multi-step problem solving.
+
+#### `AI_TEMPERATURE=omit` is required for this model
+
+`openai/gpt-5.6-luna` does not accept a `temperature` parameter. Because
+requests are sent with `provider: { require_parameters: true }`, OpenRouter only
+routes to upstream providers that honour **every** parameter in the request — so
+including an unsupported `temperature` can leave no eligible provider and fail
+the call. Determinism instead comes from `seed: 0`.
+
+If you switch to a model that does support temperature (for example
+`google/gemini-2.5-flash-lite`, which is roughly half the price but a much
+smaller model), set `AI_TEMPERATURE=0`.
+
+#### What is sent
+
+```jsonc
+POST https://openrouter.ai/api/v1/chat/completions
+Content-Type: application/json
+Authorization: Bearer ${AI_API_KEY}
+HTTP-Referer: http://localhost:3000        // optional attribution
+X-Title: Axo Lab Report Analyzer           // optional attribution
+
+{
+  "model": "openai/gpt-5.6-luna",
+  "seed": 0,
+  "messages": [ ... ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": { "name": "lab_report_extraction", "strict": true, "schema": { ... } }
+  },
+  "provider": { "require_parameters": true }
+}
+```
+
+`provider.require_parameters` is what makes strict structured output
+trustworthy: without it OpenRouter may route to a provider that silently ignores
+`response_format` and returns prose, which would fail Zod validation and waste
+the call.
+
+The two attribution headers are **optional** — they only label the request on
+the OpenRouter dashboard, and the call succeeds without them. Point `AI_APP_URL`
+at the real origin in production.
+
+#### Portability
+
+The OpenRouter extensions (the `provider` block and the two headers) are applied
+only when `AI_BASE_URL` points at `openrouter.ai`. Every other OpenAI-compatible
+endpoint — OpenAI, Azure gateways, Groq, Together, vLLM, Ollama, a self-hosted
+gateway — receives a plain, portable request body. No second AI SDK was added;
+this is the same `OpenAiCompatibleProvider` the app already had.
+
+#### Switching back to mock mode
+
+```bash
+# .env.local
+AI_PROVIDER=mock
+```
+
+That is the only line that has to change. The mock provider returns the bundled
+sample extraction, consumes no credits, and the results view shows a prominent
+**Demo mode** banner so its output can never be mistaken for a real analysis.
+
+#### Response handling
 
 The response is treated as untrusted input: markdown fences are stripped, JSON is
 parsed defensively, the payload shape is read without assuming it, and the result
 is validated with Zod. A mismatch is `AI_INVALID_RESPONSE` — never partially
 rendered data.
 
-Adding a provider that is not OpenAI-compatible (Anthropic, Gemini, Bedrock)
-means adding one class implementing `AiProvider` and one `case` in
+Adding a provider that is not OpenAI-compatible (Anthropic, Gemini native,
+Bedrock) means adding one class implementing `AiProvider` and one `case` in
 `src/lib/ai/provider.ts`. Nothing else changes.
+
+> ### ⚠️ Before uploading real patient data
+>
+> Sending a report to OpenRouter sends its **full text to a third party**, and
+> OpenRouter in turn routes it to an upstream model provider. This app does not
+> store anything, but that guarantee ends at the network boundary.
+>
+> Before uploading any real patient health data, review OpenRouter's privacy
+> policy, terms and data-retention settings, and the terms of whichever upstream
+> provider ends up serving the request. Check in particular whether prompts are
+> logged or used for training, and configure your account's data policy
+> accordingly. Depending on your jurisdiction you will also need a data
+> processing agreement in place.
+>
+> Use demo mode (`AI_PROVIDER=mock`) for demonstrations. This app makes no
+> compliance claim of any kind — see [Privacy and security](#privacy-and-security).
 
 ---
 
@@ -478,13 +583,23 @@ Every failure resolves to exactly one typed code. The API always answers with
 | `PDF_TEXT_EXTRACTION_FAILED` | 422 | Scan / image-only PDF | Explains OCR is not enabled and asks for a text PDF |
 | `AI_NOT_CONFIGURED` | 503 | `AI_PROVIDER=disabled` | How to enable demo mode |
 | `AI_MISCONFIGURED` | 500 | Live provider missing settings | Which variables are missing |
+| `AI_MISCONFIGURED` | 500 | Provider returned 401/403 — bad or missing key | "Check that `AI_API_KEY` is valid" |
 | `AI_TIMEOUT` | 504 | Provider exceeded `AI_TIMEOUT_MS` | "Try again in a moment" |
+| `AI_RATE_LIMITED` | 429 | Provider returned 429/408 | "Too many requests right now" |
+| `AI_INSUFFICIENT_CREDITS` | 402 | OpenRouter account out of credits | "Top it up and try again" |
+| `AI_STRUCTURED_OUTPUT_UNSUPPORTED` | 502 | Provider returned 404 — no route satisfies the required parameters | "The configured model cannot return structured output" |
 | `AI_REQUEST_FAILED` | 502 | Transport failure or upstream 5xx | "Try again in a moment" |
 | `AI_INVALID_RESPONSE` | 502 | Not JSON, or failed Zod validation | Explains it was rejected, not shown |
 | `INTERNAL_ERROR` | 500 | Anything unexpected | Generic message |
 
-Retries apply to `AI_REQUEST_FAILED` only. A timeout or an invalid response is
-not replayed — replaying them costs money and rarely helps. The error panel
+Retries apply to `AI_REQUEST_FAILED` and `AI_RATE_LIMITED` only. A timeout, a bad
+key, exhausted credits, an unroutable request or an invalid response are not
+replayed — retrying those costs money and cannot help.
+
+Upstream failures are classified **from the HTTP status code alone**. The
+provider's error body is never read, parsed, logged or forwarded, because a
+provider may echo the prompt — and therefore report content — back inside an
+error payload. The error panel
 offers *Try again* (same file) and *Choose another file*, and shows the error
 code so a user can quote it without pasting any report content.
 
@@ -539,8 +654,14 @@ Run `npm run dev`, then work through these.
       amber **Demo mode** banner is visible above them.
 - [ ] `AI_PROVIDER=openai-compatible` with no other variables set →
       `AI_MISCONFIGURED` listing `AI_API_KEY, AI_BASE_URL, AI_MODEL`.
-- [ ] With real credentials → results render, **no** demo banner, provider label
-      shows the model id.
+- [ ] OpenRouter configured but `AI_API_KEY` left empty → `AI_MISCONFIGURED`
+      listing only `AI_API_KEY`.
+- [ ] With a real OpenRouter key → results render, **no** demo banner, provider
+      label reads `OpenAI-compatible · openai/gpt-5.6-luna`.
+- [ ] With a deliberately invalid key → "The AI provider rejected the
+      credentials", and the key never appears in the response or the server log.
+- [ ] Switching `AI_PROVIDER` back to `mock` restores demo mode with no other
+      change and no credit spend.
 
 **Upload validation**
 

@@ -2,7 +2,9 @@
 
 import {
   AlertTriangle,
+  CreditCard,
   FileWarning,
+  Gauge,
   KeyRound,
   RotateCcw,
   ScanLine,
@@ -67,6 +69,24 @@ const PRESENTATION: Record<ErrorCode, { title: string; icon: LucideIcon; action:
       title: "The AI provider timed out",
       icon: TimerOff,
       action: "The provider took too long to answer. Try again in a moment.",
+    },
+    AI_RATE_LIMITED: {
+      title: "Too many requests right now",
+      icon: Gauge,
+      action:
+        "The AI provider is rate limiting this account. Wait a moment and try again.",
+    },
+    AI_INSUFFICIENT_CREDITS: {
+      title: "The AI provider account is out of credits",
+      icon: CreditCard,
+      action:
+        "Analysis could not run because the provider account has no remaining balance. Top it up and try again.",
+    },
+    AI_STRUCTURED_OUTPUT_UNSUPPORTED: {
+      title: "The configured model cannot return structured output",
+      icon: KeyRound,
+      action:
+        "No provider is available for this model with the options this app requires. Check the configured model on the server.",
     },
     AI_REQUEST_FAILED: {
       title: "The AI provider could not be reached",

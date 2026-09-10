@@ -38,8 +38,11 @@ export function getAiProvider(): AiProvider {
         apiKey: config.aiApiKey,
         baseUrl: config.aiBaseUrl,
         model: config.aiModel,
+        temperature: config.aiTemperature,
         timeoutMs: config.aiTimeoutMs,
         maxRetries: config.aiMaxRetries,
+        appUrl: config.aiAppUrl,
+        appTitle: config.aiAppTitle,
       });
     }
 
