@@ -98,8 +98,64 @@ export function BiomarkerTable({
       </p>
 
       <Card className="py-0">
-        {/* Wide reports scroll inside the card, never the page. */}
-        <div className="overflow-x-auto">
+        <div className="divide-y lg:hidden">
+          {filtered.length === 0 ? (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+              No biomarkers match your filters.
+            </p>
+          ) : (
+            filtered.map((biomarker) => {
+              const result = formatResult(biomarker);
+              const shownRange =
+                biomarker.appliedReferenceRange ?? biomarker.referenceRanges[0] ?? null;
+
+              return (
+                <button
+                  key={biomarker.id}
+                  type="button"
+                  onClick={() => onSelect(biomarker)}
+                  className="group flex min-h-20 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">
+                          {biomarker.standardizedName}
+                        </p>
+                        {biomarker.originalName !== biomarker.standardizedName ? (
+                          <p className="truncate text-xs text-muted-foreground">
+                            {biomarker.originalName}
+                          </p>
+                        ) : null}
+                      </div>
+                      <StatusBadge status={biomarker.status} className="shrink-0" />
+                    </div>
+
+                    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+                      <span className="text-base font-semibold tabular-nums text-foreground">
+                        {result.value}
+                        {result.unit ? (
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            {result.unit}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="text-muted-foreground">
+                        Range: {shownRange ? formatRange(shownRange) : "Not stated"}
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight
+                    className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                    aria-hidden
+                  />
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden lg:block">
           <Table>
           <TableHeader>
             <TableRow>
@@ -133,7 +189,7 @@ export function BiomarkerTable({
                     <button
                       type="button"
                       onClick={() => onSelect(biomarker)}
-                      className="text-left font-medium text-foreground underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                      className="min-h-9 text-left font-medium text-foreground underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                     >
                       {biomarker.standardizedName}
                     </button>
@@ -169,7 +225,7 @@ export function BiomarkerTable({
                       type="button"
                       onClick={() => onSelect(biomarker)}
                       aria-label={`Open details for ${biomarker.standardizedName}`}
-                      className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                      className="flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                     >
                       <ChevronRight className="size-4" aria-hidden />
                     </button>
