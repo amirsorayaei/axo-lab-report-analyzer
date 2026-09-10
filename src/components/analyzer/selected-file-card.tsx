@@ -3,6 +3,7 @@
 import { FileText, Sparkles, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { formatFileSize } from "@/lib/status-presentation";
 
 export function SelectedFileCard({
@@ -15,8 +16,8 @@ export function SelectedFileCard({
   onAnalyze: () => void;
 }) {
   return (
-    <div className="rounded-xl border bg-card p-4 sm:p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <Card>
+      <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
             <FileText className="size-5" aria-hidden />
@@ -39,7 +40,7 @@ export function SelectedFileCard({
             Analyze report
           </Button>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

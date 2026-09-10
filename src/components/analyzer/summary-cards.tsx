@@ -1,3 +1,4 @@
+import { Card, CardContent } from "@/components/ui/card";
 import { STATUS_PRESENTATION } from "@/lib/status-presentation";
 import { cn } from "@/lib/utils";
 import type { AnalysisSummary, BiomarkerStatus } from "@/lib/domain/schemas";
@@ -49,29 +50,33 @@ export function SummaryCards({ summary }: { summary: AnalysisSummary }) {
   ];
 
   return (
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       {cards.map((card) => (
-        <div key={card.key} className="rounded-xl border bg-card p-4">
-          <dt className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            {card.status ? (
-              <span
-                aria-hidden
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  STATUS_PRESENTATION[card.status].dotClass,
-                )}
-              />
-            ) : null}
-            {card.label}
-          </dt>
-          <dd className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
-            {card.value}
-          </dd>
-          <p className="mt-1 text-xs leading-snug text-muted-foreground">
-            {card.description}
-          </p>
-        </div>
+        <Card key={card.key} size="sm">
+          <CardContent>
+            <dl className="space-y-1.5">
+              <dt className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                {card.status ? (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      STATUS_PRESENTATION[card.status].dotClass,
+                    )}
+                  />
+                ) : null}
+                {card.label}
+              </dt>
+              <dd className="text-2xl font-semibold tabular-nums text-foreground">
+                {card.value}
+              </dd>
+              <dd className="text-xs leading-snug text-muted-foreground">
+                {card.description}
+              </dd>
+            </dl>
+          </CardContent>
+        </Card>
       ))}
-    </dl>
+    </div>
   );
 }

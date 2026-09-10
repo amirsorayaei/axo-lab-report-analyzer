@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
 
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -96,8 +97,10 @@ export function BiomarkerTable({
         Showing {filtered.length} of {biomarkers.length} biomarkers.
       </p>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <Table>
+      <Card className="py-0">
+        {/* Wide reports scroll inside the card, never the page. */}
+        <div className="overflow-x-auto">
+          <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-56">Biomarker</TableHead>
@@ -176,8 +179,9 @@ export function BiomarkerTable({
               })
             )}
           </TableBody>
-        </Table>
-      </div>
+          </Table>
+        </div>
+      </Card>
     </div>
   );
 }

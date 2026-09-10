@@ -2,6 +2,7 @@
 
 import { Check, Loader2 } from "lucide-react";
 
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
@@ -24,12 +25,8 @@ export function ProcessingStages({ current }: { current: ProcessingStageId }) {
   const percent = ((currentIndex + 1) / (PROCESSING_STAGES.length + 1)) * 100;
 
   return (
-    <div
-      className="rounded-xl border bg-card p-6 sm:p-8"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="mx-auto max-w-md space-y-6">
+    <Card role="status" aria-live="polite">
+      <CardContent className="mx-auto w-full max-w-md space-y-6 py-6">
         <div className="space-y-2 text-center">
           <h2 className="text-base font-semibold">Analyzing your report</h2>
           <p className="text-sm text-muted-foreground">
@@ -68,7 +65,7 @@ export function ProcessingStages({ current }: { current: ProcessingStageId }) {
             );
           })}
         </ol>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
