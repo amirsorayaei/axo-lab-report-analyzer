@@ -48,8 +48,5 @@ next-env.d.ts
 *.local.ts
 *.local.mjs
 
-# Temporary local preview asset
-public/__tmp-*
-
 # Local agent tooling
 .claude/
