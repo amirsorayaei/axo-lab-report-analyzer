@@ -49,9 +49,9 @@ const PRESENTATION: Record<ErrorCode, { title: string; icon: LucideIcon; action:
       action: "Remove the duplicate. Each file should be a different part of the report.",
     },
     INVALID_FILE_TYPE: {
-      title: "That file is not a PDF",
+      title: "Unsupported file format",
       icon: FileWarning,
-      action: "Choose a PDF exported from your laboratory portal.",
+      action: "Upload a PDF, JPG, PNG or WebP file instead.",
     },
     EMPTY_FILE: {
       title: "The file is empty",
@@ -194,17 +194,17 @@ export function ErrorPanel({
 
       <div className="flex flex-wrap gap-2">
         {onRetry ? (
-          <Button type="button" onClick={onRetry}>
+          <Button type="button" onClick={onRetry} className="h-10">
             <RotateCcw aria-hidden />
             Try again
           </Button>
         ) : null}
         {onBackToSelection ? (
-          <Button type="button" variant="outline" onClick={onBackToSelection}>
+          <Button type="button" variant="outline" onClick={onBackToSelection} className="h-10">
             Edit selection
           </Button>
         ) : null}
-        <Button type="button" variant="outline" onClick={onReset}>
+        <Button type="button" variant="outline" onClick={onReset} className="h-10">
           Choose other files
         </Button>
       </div>

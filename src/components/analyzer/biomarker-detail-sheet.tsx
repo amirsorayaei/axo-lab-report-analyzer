@@ -1,7 +1,11 @@
 "use client";
 
+import { X } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -22,7 +26,26 @@ export function BiomarkerDetailSheet({
 }) {
   return (
     <Sheet open={biomarker !== null} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-md">
+      <SheetContent
+        side="right"
+        // The default close control is a 32px icon button; replaced below with a
+        // 44px target that still reads as a compact control.
+        showCloseButton={false}
+        // The `data-[side=right]` variant in the base component wins on
+        // specificity, so the width override has to be scoped the same way.
+        className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-md data-[side=right]:lg:max-w-xl"
+      >
+        <SheetClose asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute top-2.5 right-2.5 size-11"
+          >
+            <X aria-hidden />
+            <span className="sr-only">Close details</span>
+          </Button>
+        </SheetClose>
         {biomarker ? <DetailBody biomarker={biomarker} /> : null}
       </SheetContent>
     </Sheet>
@@ -36,7 +59,9 @@ function DetailBody({ biomarker }: { biomarker: AnalyzedBiomarker }) {
   return (
     <>
       <SheetHeader className="gap-2">
-        <SheetTitle className="pr-8 text-left">{biomarker.standardizedName}</SheetTitle>
+        <SheetTitle className="pr-12 text-left text-lg">
+          {biomarker.standardizedName}
+        </SheetTitle>
         <SheetDescription className="text-left">
           {biomarker.panel ?? "Laboratory result"}
         </SheetDescription>
@@ -51,8 +76,8 @@ function DetailBody({ biomarker }: { biomarker: AnalyzedBiomarker }) {
 
       <div className="space-y-5 px-4 pb-8">
         <div className="rounded-lg border bg-muted/40 p-4">
-          <p className="text-xs font-medium text-muted-foreground">Result</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">{displayValue}</p>
+          <p className="text-xs tracking-wide text-muted-foreground uppercase">Result</p>
+          <p className="numeric mt-1 text-2xl font-semibold">{displayValue}</p>
           {result.conversionNote ? (
             <p className="mt-1 text-xs text-muted-foreground">
               Converted {result.conversionNote}. The same factor was applied to the
@@ -162,7 +187,7 @@ function RangeList({
             key={`${range.text}-${index}`}
             className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm"
           >
-            <span className="font-medium tabular-nums text-foreground">
+            <span className="numeric font-medium text-foreground">
               {formatRange(range)}
               {isApplied ? (
                 <span className="ml-2 text-xs font-normal text-status-optimal">

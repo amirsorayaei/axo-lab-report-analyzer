@@ -9,7 +9,7 @@ import { MAX_TOTAL_UPLOAD_BYTES } from "@/lib/upload/formats";
 export const dynamic = "force-dynamic";
 
 export default function HomePage() {
-  // Read on the server; only the derived size limit reaches the client.
+  // Read on the server; only the derived size limits reach the client.
   const maxUploadMb = Math.round(getServerConfig().maxUploadBytes / (1024 * 1024));
 
   return (
@@ -18,15 +18,20 @@ export default function HomePage() {
     // up under short content. Growing to fill the body pins it to the bottom.
     <div className="flex flex-1 flex-col">
       <header className="border-b bg-card">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <span className="relative flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <Activity className="size-4" aria-hidden />
+              {/* The one place the lime accent appears in the chrome. */}
+              <span
+                aria-hidden
+                className="absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-brand-accent ring-2 ring-card"
+              />
             </span>
-            <div className="leading-tight">
-              <p className="text-sm font-semibold">Lab Report Analyzer</p>
-              <p className="text-xs text-muted-foreground">Axo Longevity</p>
-            </div>
+            <span className="leading-tight">
+              <span className="block text-sm font-semibold">Lab Report Analyzer</span>
+              <span className="block text-xs text-muted-foreground">Axo Longevity</span>
+            </span>
           </div>
 
           <p className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
@@ -36,19 +41,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
-        <div className="mb-8 max-w-2xl space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-            Understand a laboratory report in one upload
-          </h1>
-          <p className="text-sm text-muted-foreground sm:text-base">
-            Upload the pages of one report — PDFs, photos or screenshots. Every
-            biomarker is extracted, translated into standardized English names and
-            units, and classified strictly against the ranges the report itself
-            prints.
-          </p>
-        </div>
-
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
         <AnalyzerShell
           maxUploadMb={maxUploadMb}
           maxTotalMb={Math.round(MAX_TOTAL_UPLOAD_BYTES / (1024 * 1024))}
@@ -56,7 +49,7 @@ export default function HomePage() {
       </main>
 
       <footer className="border-t bg-card">
-        <div className="mx-auto max-w-6xl px-4 py-5 text-xs text-muted-foreground sm:px-6">
+        <div className="mx-auto max-w-5xl px-4 py-4 text-xs text-muted-foreground sm:px-6">
           Informational tool only. Not a medical device and not medical advice.
         </div>
       </footer>
