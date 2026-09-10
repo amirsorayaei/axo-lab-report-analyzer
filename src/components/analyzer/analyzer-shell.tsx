@@ -10,7 +10,6 @@ import {
 import { ResultsView } from "@/components/analyzer/results-view";
 import { SelectedFilesList } from "@/components/analyzer/selected-files-list";
 import { UploadDropzone } from "@/components/analyzer/upload-dropzone";
-import { MedicalDisclaimer } from "@/components/analyzer/medical-disclaimer";
 import { MAX_FILES, fileIdentity } from "@/lib/upload/formats";
 import type { AnalyzeResponse } from "@/lib/api-types";
 import type { AnalysisResult } from "@/lib/domain/schemas";
@@ -140,26 +139,42 @@ export function AnalyzerShell({
   }
 
   if (view.name === "processing") {
-    return <ProcessingStages current={view.stage} />;
+    return (
+      <div className="mx-auto max-w-2xl">
+        <ProcessingStages current={view.stage} />
+      </div>
+    );
   }
 
   if (view.name === "error") {
     return (
-      <ErrorPanel
-        code={view.code}
-        message={view.message}
-        hint={view.hint}
-        onRetry={files.length > 0 ? () => analyze(files) : undefined}
-        onReset={reset}
-        onBackToSelection={
-          files.length > 0 ? () => setView({ name: "selected" }) : undefined
-        }
-      />
+      <div className="mx-auto max-w-2xl">
+        <ErrorPanel
+          code={view.code}
+          message={view.message}
+          hint={view.hint}
+          onRetry={files.length > 0 ? () => analyze(files) : undefined}
+          onReset={reset}
+          onBackToSelection={
+            files.length > 0 ? () => setView({ name: "selected" }) : undefined
+          }
+        />
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div className="space-y-2 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+          Your lab report, made clear
+        </h1>
+        <p className="text-sm text-pretty text-muted-foreground sm:text-base">
+          Upload a PDF or images. We&rsquo;ll organize every biomarker, standardize
+          its name and unit, and compare it with the ranges printed by your lab.
+        </p>
+      </div>
+
       {files.length > 0 ? (
         <SelectedFilesList
           files={files}
@@ -175,8 +190,6 @@ export function AnalyzerShell({
           onSelect={addFiles}
         />
       )}
-
-      <MedicalDisclaimer />
     </div>
   );
 }

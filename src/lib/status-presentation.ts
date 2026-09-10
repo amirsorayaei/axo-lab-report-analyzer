@@ -1,37 +1,65 @@
+import { CircleCheck, CircleHelp, Minus, TriangleAlert } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
 import type { BiomarkerStatus } from "@/lib/domain/schemas";
 
 /**
- * One place where a status becomes a label, a colour and an explanation, so the
- * badge, the summary cards and the detail panel can never drift apart.
+ * One place where a status becomes a label, an icon, a colour and an
+ * explanation, so the badge, the summary counts and the detail panel can never
+ * drift apart.
+ *
+ * Every status carries a written label AND a distinct icon shape. Colour is only
+ * ever a third, reinforcing signal — the UI stays readable in greyscale and for
+ * colour-blind users.
  */
 export const STATUS_PRESENTATION: Record<
   BiomarkerStatus,
-  { label: string; description: string; badgeClass: string; dotClass: string }
+  {
+    label: string;
+    description: string;
+    icon: LucideIcon;
+    badgeClass: string;
+    dotClass: string;
+    textClass: string;
+    surfaceClass: string;
+  }
 > = {
   optimal: {
     label: "Optimal",
     description: "Inside an optimal range printed on the report.",
+    icon: CircleCheck,
     badgeClass:
       "bg-status-optimal-surface text-status-optimal border-status-optimal/25",
     dotClass: "bg-status-optimal",
+    textClass: "text-status-optimal",
+    surfaceClass: "bg-status-optimal-surface",
   },
   normal: {
     label: "Normal",
     description: "Inside the reference range printed on the report.",
+    icon: Minus,
     badgeClass: "bg-status-normal-surface text-status-normal border-status-normal/25",
     dotClass: "bg-status-normal",
+    textClass: "text-status-normal",
+    surfaceClass: "bg-status-normal-surface",
   },
   out_of_range: {
     label: "Out of range",
     description: "Outside the reference range printed on the report.",
+    icon: TriangleAlert,
     badgeClass: "bg-status-out-surface text-status-out border-status-out/25",
     dotClass: "bg-status-out",
+    textClass: "text-status-out",
+    surfaceClass: "bg-status-out-surface",
   },
   needs_review: {
     label: "Needs review",
     description: "Not enough information on the report to classify automatically.",
+    icon: CircleHelp,
     badgeClass: "bg-status-review-surface text-status-review border-status-review/25",
     dotClass: "bg-status-review",
+    textClass: "text-status-review",
+    surfaceClass: "bg-status-review-surface",
   },
 };
 
