@@ -189,7 +189,12 @@ export class OpenAiCompatibleProvider implements AiProvider {
       }
 
       try {
-        const payload: unknown = await response.json();
+        // Not `response.json()`. While an upstream model is still generating,
+        // OpenRouter keeps the connection alive by padding the body before the
+        // real payload — blank lines, and SSE-style `:` comment lines. Blank
+        // lines parse fine; a comment line makes `JSON.parse` throw, which
+        // surfaced as a sporadic AI_INVALID_RESPONSE on slower requests.
+        const payload: unknown = parseJsonWithKeepAlivePadding(await response.text());
         const content = readMessageContent(payload);
 
         if (content === null) {
@@ -281,6 +286,25 @@ function errorForStatus(status: number): AppError {
 
 function issuePaths(issues: Array<{ path: PropertyKey[] }>): string[] {
   return issues.map((issue) => issue.path.map(String).join(".")).filter(Boolean);
+}
+
+/**
+ * Parses a JSON body that may carry OpenRouter's keep-alive padding in front of
+ * it: blank lines, and SSE-style comment lines beginning with `:`. Only leading
+ * padding is skipped — the payload itself is parsed strictly, so a genuinely
+ * malformed body still throws and is reported as AI_INVALID_RESPONSE.
+ */
+function parseJsonWithKeepAlivePadding(raw: string): unknown {
+  const start = raw.search(/[[{]/);
+  if (start > 0) {
+    const padding = raw.slice(0, start);
+    // Only skip padding that is entirely blank lines and `:` comment lines.
+    // Anything else means the body is not what we think it is.
+    if (/^(?:\s*(?::[^\n]*)?\n)*\s*$/.test(padding)) {
+      return JSON.parse(raw.slice(start));
+    }
+  }
+  return JSON.parse(raw);
 }
 
 /** Reads `choices[0].message.content` without trusting the payload shape. */
