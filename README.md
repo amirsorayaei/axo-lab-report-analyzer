@@ -56,10 +56,13 @@ AI_PROVIDER=mock
 AI_PROVIDER=openai-compatible
 AI_API_KEY=<your-key>
 AI_BASE_URL=https://openrouter.ai/api/v1
-AI_MODEL=<provider/model-id>
+AI_MODEL=google/gemini-2.5-flash-lite
 AI_TEMPERATURE=0
+AI_TIMEOUT_MS=120000
 AI_SUPPORTS_IMAGES=true
 ```
+
+`google/gemini-2.5-flash-lite` is the validated configuration: against the supplied challenge report it transcribed every printed biomarker, with correct patient metadata, units and printed ranges. Any other OpenAI-compatible model can be substituted by changing `AI_MODEL`.
 
 The default (`AI_PROVIDER=disabled`) makes analysis return a controlled `AI_NOT_CONFIGURED` error, so the app installs, builds and runs with no provider configured. `.env.local` is git-ignored.
 
@@ -196,12 +199,12 @@ Upstream failures are classified from the HTTP status code alone. The provider's
 - **Unusual layouts.** Row reconstruction is tuned for common report layouts. Heavily non-standard formatting may pair values with the wrong range or be skipped.
 - **Conflicting-patient detection is model-reported**, so it is a safety net rather than a guarantee.
 - **Duplicate detection is metadata-based** (name, size, type); the same page saved under two names is not caught before upload.
-- **No accounts, no history, no export, no persistence, and no deployment.** Each analysis is standalone.
+- **No accounts, no history, no export, and no persistence.** Each analysis is standalone.
 - **No automated test suite.** The domain layer is pure and framework-free specifically so unit tests would be straightforward to add.
 
 ## Production considerations
 
-Not deployed. Before this handled real patient data it would need: authentication and per-user authorization; a secure storage strategy with encryption and a short retention policy if persistence is ever introduced; background/async processing so long reports are not bound to a single request timeout; provider monitoring, retries and fallbacks; observability that records request outcomes without recording report content; rate limiting and upload abuse controls; and a privacy and clinical review of both the data flow and the classification rules.
+Deployed on Vercel as a demonstration only. Before this handled real patient data it would need: authentication and per-user authorization; a secure storage strategy with encryption and a short retention policy if persistence is ever introduced; background/async processing so long reports are not bound to a single request timeout; provider monitoring, retries and fallbacks; observability that records request outcomes without recording report content; rate limiting and upload abuse controls; and a privacy and clinical review of both the data flow and the classification rules.
 
 ---
 

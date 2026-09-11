@@ -18,9 +18,9 @@ const EnvSchema = z.object({
   AI_API_KEY: z.string().optional(),
   AI_BASE_URL: z.string().url().optional(),
   AI_MODEL: z.string().optional(),
-  // `omit` sends no temperature at all. Required for reasoning models such as
-  // openai/gpt-5.6-luna, which do not accept the parameter — sending it while
-  // OpenRouter is asked to require parameters can leave no eligible provider.
+  // `omit` sends no temperature at all. Required for reasoning models that do
+  // not accept the parameter — sending it while OpenRouter is asked to require
+  // parameters can leave no eligible provider.
   AI_TEMPERATURE: z
     .union([z.literal("omit"), z.coerce.number().min(0).max(2)])
     .default(0),
@@ -29,9 +29,9 @@ const EnvSchema = z.object({
   // Optional OpenRouter attribution headers. Never required for a request.
   AI_APP_URL: z.string().url().default("http://localhost:3000"),
   AI_APP_TITLE: z.string().default("Axo Lab Report Analyzer"),
-  // Declared, not probed. The configured default (openai/gpt-5.6-luna) accepts
-  // image input; set this to false for a text-only model so image uploads are
-  // refused before a request is spent.
+  // Declared, not probed. The documented default (google/gemini-2.5-flash-lite)
+  // accepts image input; set this to false for a text-only model so image
+  // uploads are refused before a request is spent.
   AI_SUPPORTS_IMAGES: z
     .enum(["true", "false"])
     .default("true")
