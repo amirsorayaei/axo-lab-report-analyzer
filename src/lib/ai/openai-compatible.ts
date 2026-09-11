@@ -59,13 +59,18 @@ export class OpenAiCompatibleProvider implements AiProvider {
   async extract({ inputs, signal }: ExtractionRequest): Promise<RawExtraction> {
     const body = {
       model: this.options.model,
-      // Deterministic transcription, not creative writing. Reasoning models such
-      // as openai/gpt-5.6-luna reject `temperature` outright, so it is omitted
-      // when configured as `omit` and `seed` carries the determinism instead.
+      // Deterministic transcription, not creative writing. `AI_TEMPERATURE=omit`
+      // drops the field entirely for reasoning models that reject it outright.
+      //
+      // No `seed` is sent. Support for it varies widely between models, and
+      // `provider.require_parameters` below makes every parameter in this body a
+      // hard routing requirement — so an unsupported `seed` leaves OpenRouter
+      // with no eligible provider and fails the whole request with a 404.
+      // Temperature is the portable determinism control; seed was only ever a
+      // best-effort hint on top of it.
       ...(this.options.temperature !== null
         ? { temperature: this.options.temperature }
         : {}),
-      seed: 0,
       messages: [
         { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
         // Ordered multimodal content: one lead instruction, then labelled text
@@ -139,49 +144,73 @@ export class OpenAiCompatibleProvider implements AiProvider {
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     signal.addEventListener("abort", onAbort, { once: true });
+
+    /*
+     * The timeout has to cover the WHOLE exchange, not just the headers.
+     * `fetch` resolves as soon as response headers arrive, and OpenRouter
+     * answers 200 immediately while an upstream model is still queued or
+     * generating. Clearing the timer at that point would leave the body read
+     * unguarded, and a stalled body would hang the request forever.
+     */
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
 
-    let response: Response;
-    try {
-      response = await fetch(`${trimSlash(this.options.baseUrl)}/chat/completions`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify(body),
-        signal: controller.signal,
-        cache: "no-store",
+    /** True when we aborted on our own timeout rather than the caller leaving. */
+    const timedOut = () => controller.signal.aborted && !signal.aborted;
+
+    const timeoutError = () =>
+      new AppError("AI_TIMEOUT", "The AI provider did not respond in time.", {
+        hint: `The request was cancelled after ${Math.round(this.options.timeoutMs / 1000)} seconds.`,
       });
-    } catch (error) {
-      if (controller.signal.aborted && !signal.aborted) {
-        throw new AppError("AI_TIMEOUT", "The AI provider did not respond in time.", {
-          hint: `The request was cancelled after ${Math.round(this.options.timeoutMs / 1000)} seconds.`,
+
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${trimSlash(this.options.baseUrl)}/chat/completions`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify(body),
+          signal: controller.signal,
+          cache: "no-store",
+        });
+      } catch (error) {
+        if (timedOut()) throw timeoutError();
+        throw new AppError("AI_REQUEST_FAILED", "The AI provider could not be reached.", {
+          cause: error,
         });
       }
-      throw new AppError("AI_REQUEST_FAILED", "The AI provider could not be reached.", {
-        cause: error,
-      });
+
+      if (!response.ok) {
+        // Discarded without being read: a provider may echo the prompt — and
+        // therefore report content — back inside an error payload. Cancelling
+        // rather than ignoring it releases the socket instead of leaking it.
+        await response.body?.cancel().catch(() => {});
+        // Mapped from the status code alone.
+        throw errorForStatus(response.status);
+      }
+
+      try {
+        const payload: unknown = await response.json();
+        const content = readMessageContent(payload);
+
+        if (content === null) {
+          throw new AppError(
+            "AI_INVALID_RESPONSE",
+            "The AI provider returned an unexpected response shape.",
+          );
+        }
+
+        return content;
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        // A body that stalls mid-stream lands here once the timeout aborts it;
+        // anything else at this point is malformed JSON.
+        if (timedOut()) throw timeoutError();
+        throw new AppError("AI_INVALID_RESPONSE", "The AI provider did not return JSON.");
+      }
     } finally {
       clearTimeout(timeout);
       signal.removeEventListener("abort", onAbort);
     }
-
-    if (!response.ok) {
-      // Mapped from the status code alone. The response body is deliberately
-      // never read, parsed, logged or forwarded: a provider may echo the prompt
-      // — and therefore report content — back inside an error payload.
-      throw errorForStatus(response.status);
-    }
-
-    const payload: unknown = await response.json().catch(() => null);
-    const content = readMessageContent(payload);
-
-    if (content === null) {
-      throw new AppError(
-        "AI_INVALID_RESPONSE",
-        "The AI provider returned an unexpected response shape.",
-      );
-    }
-
-    return content;
   }
 
   private validate(content: string): RawExtraction {
