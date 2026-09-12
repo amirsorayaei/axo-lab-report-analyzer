@@ -31,8 +31,7 @@ export function UploadDropzone({
 
   return (
     <div
-      // The drop target is a plain region; the button inside is what receives
-      // keyboard focus, so there is no custom key handling to get wrong.
+      // The inner button takes keyboard focus, so the region needs no handlers.
       onDragOver={(event) => {
         event.preventDefault();
         if (!disabled) setIsDragging(true);

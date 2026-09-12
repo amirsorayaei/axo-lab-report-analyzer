@@ -4,18 +4,16 @@ import { AnalyzerShell } from "@/components/analyzer/analyzer-shell";
 import { getServerConfig } from "@/lib/config";
 import { MAX_TOTAL_UPLOAD_BYTES } from "@/lib/upload/formats";
 
-// Read the upload limit from the runtime environment rather than baking the
-// build-time value into a static page.
+// Reads the upload limit at runtime rather than baking it into a static page.
 export const dynamic = "force-dynamic";
 
 export default function HomePage() {
-  // Read on the server; only the derived size limits reach the client.
+  // Only the derived size limit reaches the client.
   const maxUploadMb = Math.round(getServerConfig().maxUploadBytes / (1024 * 1024));
 
   return (
-    // `flex-1` rather than a percentage height: the body is a flex column with
-    // only a min-height, so `min-h-full` collapses here and lets the footer ride
-    // up under short content. Growing to fill the body pins it to the bottom.
+    // `flex-1`, not a percentage height: the body only has a min-height, so
+    // `min-h-full` collapses and lets the footer ride up under short content.
     <div className="flex flex-1 flex-col">
       <header className="border-b bg-card">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">

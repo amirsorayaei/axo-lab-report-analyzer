@@ -5,12 +5,7 @@ import { Check, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-/**
- * Honest progress: these are the real stages of the request, in order. The
- * client cannot observe server-side progress, so the stages advance on estimates
- * and the last one stays busy until the response arrives. Nothing is shown as a
- * percentage, because a percentage would imply a precision we do not have.
- */
+/** No percentage: it would imply a precision the client does not have. */
 export const PROCESSING_STAGES = [
   { id: "validating", label: "Validating files" },
   { id: "reading", label: "Reading report" },
@@ -35,7 +30,6 @@ export function ProcessingStages({ current }: { current: ProcessingStageId }) {
           </p>
         </div>
 
-        {/* Step segments rather than a percentage bar: honest about granularity. */}
         <ol className="flex gap-1.5" aria-hidden>
           {PROCESSING_STAGES.map((stage, index) => (
             <li
@@ -51,8 +45,8 @@ export function ProcessingStages({ current }: { current: ProcessingStageId }) {
         </ol>
 
         {/*
-         * A single live region announcing the current step. The list itself is
-         * not live, so a screen reader hears one concise update per stage.
+         * Only this region is live, so a screen reader hears one update per
+         * stage rather than the whole list re-announcing.
          */}
         <p className="sr-only" role="status" aria-live="polite">
           Step {currentIndex + 1} of {PROCESSING_STAGES.length}:{" "}
@@ -93,8 +87,8 @@ export function ProcessingStages({ current }: { current: ProcessingStageId }) {
                 <span className="flex-1">{stage.label}</span>
 
                 {/*
-                 * A text cue, not just a spinning icon: with reduced motion the
-                 * spinner is static, so the state must still be readable.
+                 * Under reduced motion the spinner is static, so the state
+                 * needs a text cue too.
                  */}
                 {isCurrent ? (
                   <span className="text-xs font-normal text-muted-foreground">

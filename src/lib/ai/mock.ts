@@ -6,21 +6,17 @@ import type { AiProvider } from "@/lib/ai/types";
 import type { RawExtraction } from "@/lib/domain/schemas";
 
 /**
- * Demo provider. Enabled only when AI_PROVIDER=mock, and always surfaced in the
- * UI as demo mode: it ignores the uploaded sources — one file or eight, PDF or
- * image — and returns the bundled sample extraction. It exists so the interface,
- * the pipeline and the UI can be reviewed without a provider decision, never as
- * a fallback for a failed call.
+ * Ignores the uploaded sources and returns the bundled fixture, always surfaced
+ * in the UI as demo mode. Never a fallback for a failed live call.
  */
 export class MockAiProvider implements AiProvider {
   readonly label = "Mock provider (bundled sample report)";
   readonly mode = "mock" as const;
-  /** The fixture is returned whatever the sources are, images included. */
+
   readonly supportsImages = true;
 
   async extract(): Promise<RawExtraction> {
-    // Validated like any provider response: the fixture must satisfy the same
-    // contract a live model has to satisfy.
+    // The fixture must satisfy the same contract as a live response.
     return RawExtractionSchema.parse(SAMPLE_REPORT_EXTRACTION);
   }
 }

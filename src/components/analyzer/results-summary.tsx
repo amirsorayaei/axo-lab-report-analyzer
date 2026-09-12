@@ -13,10 +13,7 @@ const COUNT_BY_STATUS: Record<BiomarkerStatus, keyof AnalysisSummary> = {
   needs_review: "needsReview",
 };
 
-/**
- * One summary block rather than five loose cards: the extracted total is the
- * headline, and the four status counts double as filters for the list below.
- */
+/** The four status counts double as filters for the list below. */
 export function ResultsSummary({
   summary,
   activeStatus,
@@ -52,8 +49,6 @@ export function ResultsSummary({
                 key={status}
                 type="button"
                 aria-pressed={isActive}
-                // Clicking an active chip clears the filter, so the control is a
-                // toggle rather than a one-way trap.
                 onClick={() => onStatusChange(isActive ? "all" : status)}
                 className={cn(
                   "flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-left hover:bg-muted/60 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",

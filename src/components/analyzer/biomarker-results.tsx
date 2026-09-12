@@ -28,10 +28,7 @@ import { Search } from "lucide-react";
 
 export type StatusFilter = BiomarkerStatus | "all";
 
-/**
- * Filtering lives next to the UI that drives it, but the state is owned by the
- * results view so the summary counts can act as filters too.
- */
+/** State is owned by the results view so summary counts can filter too. */
 export function filterBiomarkers(
   biomarkers: AnalyzedBiomarker[],
   { query, status }: { query: string; status: StatusFilter },
@@ -55,7 +52,7 @@ export function filterBiomarkers(
   });
 }
 
-/** Fall back to the first printed range so the row still shows what the lab said. */
+/** Falls back to the first printed range so the row still shows what the lab said. */
 function displayRange(biomarker: AnalyzedBiomarker) {
   return biomarker.appliedReferenceRange ?? biomarker.referenceRanges[0] ?? null;
 }
@@ -69,7 +66,6 @@ export function BiomarkerResults({
   onStatusChange,
   onSelect,
 }: {
-  /** Already filtered by the parent. */
   biomarkers: AnalyzedBiomarker[];
   totalCount: number;
   query: string;
@@ -109,8 +105,7 @@ export function BiomarkerResults({
 
         <Select value={status} onValueChange={(value) => onStatusChange(value as StatusFilter)}>
           {/*
-           * `data-[size=default]:h-8` in the primitive wins on specificity, so
-           * the touch-size override has to be scoped the same way.
+           * Scoped to beat `data-[size=default]:h-8` in the primitive.
            */}
           <SelectTrigger
             className="w-full data-[size=default]:h-11 sm:w-52"
@@ -139,9 +134,8 @@ export function BiomarkerResults({
       ) : (
         <Card className="py-0">
           {/*
-           * Below `lg` the table cannot show Result, Reference range and Status
-           * without clipping them off-screen, so the same data is rendered as
-           * full-width rows instead. Nothing is hidden at any width.
+           * Below `lg` the table clips Result, Reference range and Status, so
+           * the same data is rendered as rows. Nothing is hidden at any width.
            */}
           <ul className="divide-y lg:hidden">
             {biomarkers.map((biomarker) => (
@@ -153,7 +147,6 @@ export function BiomarkerResults({
             ))}
           </ul>
 
-          {/* A safety net only: at `lg` and up the columns already fit. */}
           <div className="hidden overflow-x-auto lg:block">
             <Table>
               <TableHeader>
@@ -236,10 +229,7 @@ export function BiomarkerResults({
   );
 }
 
-/**
- * One biomarker as a full-width, touch-sized row. The whole row is a single
- * button, so mouse, touch and keyboard all reach the detail sheet the same way.
- */
+/** The whole row is one button, so pointer and keyboard behave identically. */
 function BiomarkerRow({
   biomarker,
   onSelect,

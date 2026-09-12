@@ -22,11 +22,7 @@ export type ValidatedUpload = {
   sourceIndex: number;
 };
 
-/**
- * Magic-number checks. The extension and the browser-reported MIME type are both
- * client-supplied and trivially forged; the leading bytes are what actually
- * decide what a file is.
- */
+// Authoritative: the extension and browser MIME type are client-controlled.
 const SIGNATURES: Record<SupportedFormat, (bytes: Uint8Array) => boolean> = {
   pdf: (bytes) => startsWith(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d]), // %PDF-
   jpeg: (bytes) => startsWith(bytes, [0xff, 0xd8, 0xff]),
@@ -45,9 +41,8 @@ function startsWith(bytes: Uint8Array, prefix: number[]): boolean {
 }
 
 /**
- * Validates the whole selection. Any invalid file rejects the entire request:
- * a partially analysed report would silently omit results, which is worse than
- * a clear failure.
+ * Any invalid file rejects the whole request: a partially analysed report would
+ * silently omit results, which is worse than a clear failure.
  */
 export async function validateUploads(
   files: File[],
@@ -90,7 +85,7 @@ export async function validateUploads(
     validated.push(await validateOne(file, sourceIndex, maxFileBytes));
     actualTotal += validated[validated.length - 1].sizeBytes;
 
-    // Re-checked against real byte lengths, not the size the browser claimed.
+    // Against real byte lengths, not the size the browser claimed.
     if (actualTotal > MAX_TOTAL_UPLOAD_BYTES) {
       throw new AppError("TOTAL_UPLOAD_TOO_LARGE", "The selected files are too large.", {
         hint: `The combined limit is ${megabytes(MAX_TOTAL_UPLOAD_BYTES)} MB.`,
@@ -116,8 +111,7 @@ async function validateOne(
     });
   }
 
-  // An empty browser type is normal for drag-and-dropped files, so it is only
-  // rejected when it is present and contradicts the extension.
+  // Empty is normal for drag-and-drop, so reject only a contradicting type.
   if (file.type !== "" && !definition.mimeTypes.includes(file.type.toLowerCase())) {
     throw new AppError("INVALID_FILE_TYPE", `${where} is not a supported format.`, {
       hint: `The browser reported the type "${file.type}", which does not match a ${definition.label} file.`,

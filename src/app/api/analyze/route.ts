@@ -14,17 +14,13 @@ import {
 import { validateUploads, type ValidatedUpload } from "@/lib/upload/validate";
 import type { AnalyzeResponse } from "@/lib/api-types";
 
+// pdfjs and sharp need real Node APIs and native binaries.
 export const runtime = "nodejs";
-/** The upload must be read on every request; nothing about it is cacheable. */
 export const dynamic = "force-dynamic";
 
 /**
- * Upload -> validate every file -> normalize into ordered sources -> provider ->
- * deterministic analysis.
- *
- * Nothing is persisted: the file bytes, the extracted text, the normalized image
- * data URLs, the prompt and the analysis all live inside this request. No PHI is
- * logged, and Base64 image data is never written anywhere.
+ * Nothing is persisted: file bytes, extracted text, image data URLs, the prompt
+ * and the analysis all live inside this request. No PHI is ever logged.
  */
 export async function POST(request: Request): Promise<NextResponse<AnalyzeResponse>> {
   try {
@@ -88,8 +84,7 @@ export async function POST(request: Request): Promise<NextResponse<AnalyzeRespon
   } catch (error) {
     const appError = toAppError(error);
 
-    // Only the error code is logged. Messages may quote report text or file
-    // names, so they are returned to the caller but never written to the log.
+    // Code only: messages may quote report text or file names.
     if (appError.code === "INTERNAL_ERROR") {
       console.error(`[analyze] unhandled failure (${appError.code})`);
     }
@@ -109,10 +104,8 @@ export async function POST(request: Request): Promise<NextResponse<AnalyzeRespon
 }
 
 /**
- * Turns validated uploads into ordered report inputs, preserving the user's
- * order. PDFs are read locally with pdfjs and the original file is never sent to
- * the provider when extraction succeeds; images are normalized and passed to the
- * model as vision input.
+ * PDFs are read locally and the file itself never reaches the provider; images
+ * have no text layer, so they are normalized and sent as vision input.
  */
 async function buildReportInputs(uploads: ValidatedUpload[]): Promise<ReportInput[]> {
   const inputs: ReportInput[] = [];

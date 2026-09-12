@@ -5,9 +5,8 @@ import { z } from "zod";
 import { AppError } from "@/lib/domain/errors";
 
 /**
- * Server-only configuration. Nothing here is prefixed with `NEXT_PUBLIC_`, so no
- * value in this module can reach the browser bundle. Secrets are read but never
- * logged, never returned in an API response and never included in an error.
+ * Nothing here is prefixed `NEXT_PUBLIC_`, so no value can reach the browser.
+ * Secrets are read but never logged, returned or included in an error.
  */
 
 const AI_PROVIDERS = ["disabled", "mock", "openai-compatible"] as const;
@@ -18,9 +17,8 @@ const EnvSchema = z.object({
   AI_API_KEY: z.string().optional(),
   AI_BASE_URL: z.string().url().optional(),
   AI_MODEL: z.string().optional(),
-  // `omit` sends no temperature at all. Required for reasoning models that do
-  // not accept the parameter — sending it while OpenRouter is asked to require
-  // parameters can leave no eligible provider.
+  // `omit` for models that reject `temperature`: under require_parameters an
+  // unsupported field can leave no eligible provider.
   AI_TEMPERATURE: z
     .union([z.literal("omit"), z.coerce.number().min(0).max(2)])
     .default(0),
@@ -29,9 +27,7 @@ const EnvSchema = z.object({
   // Optional OpenRouter attribution headers. Never required for a request.
   AI_APP_URL: z.string().url().default("http://localhost:3000"),
   AI_APP_TITLE: z.string().default("Axo Lab Report Analyzer"),
-  // Declared, not probed. The documented default (google/gemini-2.5-flash-lite)
-  // accepts image input; set this to false for a text-only model so image
-  // uploads are refused before a request is spent.
+  // Declared, not probed, so image uploads are refused before a request.
   AI_SUPPORTS_IMAGES: z
     .enum(["true", "false"])
     .default("true")
@@ -74,7 +70,7 @@ export function getServerConfig(): ServerConfig {
   });
 
   if (!parsed.success) {
-    // Only the offending variable names are surfaced, never their values.
+    // Names only, never values.
     const fields = Object.keys(z.flattenError(parsed.error).fieldErrors).join(", ");
     throw new AppError(
       "AI_MISCONFIGURED",

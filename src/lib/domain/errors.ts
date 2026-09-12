@@ -1,8 +1,6 @@
 /**
- * Typed error codes shared by the API route and the UI.
- *
- * Every failure path in the pipeline resolves to exactly one of these codes so
- * the client can render a specific, actionable message without parsing strings.
+ * Every failure path resolves to exactly one code, so the client renders a
+ * specific message without parsing strings.
  */
 export const ERROR_CODES = [
   "NO_FILES",
@@ -35,9 +33,8 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 
 export class AppError extends Error {
   readonly code: ErrorCode;
-  /** Optional short, user-safe hint. Must never contain PHI or secrets. */
+  /** Must never contain PHI or secrets. */
   readonly hint?: string;
-  /** HTTP status the route handler should respond with. */
   readonly status: number;
 
   constructor(

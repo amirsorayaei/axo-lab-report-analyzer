@@ -4,10 +4,6 @@ const SEX_LABEL: Record<string, string> = { male: "Male", female: "Female" };
 
 const NOT_STATED = "Not stated on the report";
 
-/**
- * Report metadata as a compact definition list. It is context, not findings, so
- * it stays visually quieter than the biomarker summary below it.
- */
 export function ReportSummary({
   patient,
   sources,

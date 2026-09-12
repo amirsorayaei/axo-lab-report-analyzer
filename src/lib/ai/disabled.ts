@@ -4,9 +4,8 @@ import { AppError } from "@/lib/domain/errors";
 import type { AiProvider } from "@/lib/ai/types";
 
 /**
- * Safe default. The app installs, builds and runs without an API key; analysis
- * fails loudly with a controlled error instead of silently falling back to
- * fixture data, which would be dangerous in a health context.
+ * Safe default: analysis fails loudly rather than silently serving fixture data,
+ * which would be dangerous in a health context.
  */
 export class DisabledAiProvider implements AiProvider {
   readonly label = "Disabled";

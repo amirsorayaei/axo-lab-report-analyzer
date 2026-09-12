@@ -28,11 +28,9 @@ export function BiomarkerDetailSheet({
     <Sheet open={biomarker !== null} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        // The default close control is a 32px icon button; replaced below with a
-        // 44px target that still reads as a compact control.
+        // Replaces the default 32px close control with a 44px touch target.
         showCloseButton={false}
-        // The `data-[side=right]` variant in the base component wins on
-        // specificity, so the width override has to be scoped the same way.
+        // Scoped to beat the base `data-[side=right]` variant's specificity.
         className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-md data-[side=right]:lg:max-w-xl"
       >
         <SheetClose asChild>

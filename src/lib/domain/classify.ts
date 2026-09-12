@@ -5,21 +5,13 @@ import type {
 } from "@/lib/domain/schemas";
 
 /**
- * Deterministic classification.
+ * The model never returns a status: it transcribes values and the ranges the
+ * report prints, and the decision is made here from those facts alone. This
+ * application never supplies a threshold of its own.
  *
- * The model never returns a status. It only transcribes values and the ranges
- * printed on the report; the decision below is made in TypeScript from those
- * facts alone. No threshold is ever supplied by this application.
- *
- * Decision order:
- *   1. No parsable numeric value                     -> needs_review
- *   2. Value/range unit mismatch                     -> needs_review
- *   3. No applicable range at all                    -> needs_review
- *   4. A range that requires age/sex we do not have  -> needs_review
- *   5. Ambiguity: several applicable ranges disagree -> needs_review
- *   6. Inside an applicable OPTIMAL range            -> optimal
- *   7. Inside an applicable REFERENCE range          -> normal
- *   8. Outside an applicable REFERENCE range         -> out_of_range
+ * Every reason to doubt is checked before a confident status is returned, so
+ * anything unparsable, unit-mismatched, unscoped or ambiguous is `needs_review`
+ * rather than a guess.
  */
 
 export type PatientContext = {
@@ -49,10 +41,9 @@ type Applicability =
   | { kind: "unknown_context"; missing: "age" | "sex" };
 
 /**
- * A range applies when every demographic condition it states is satisfied.
- * A range with no stated condition applies to everyone. When a range states a
- * condition we cannot evaluate (report gave no age or no sex), the biomarker is
- * ambiguous rather than assumed to match.
+ * A range with no stated condition applies to everyone. A condition we cannot
+ * evaluate (no age or sex on the report) makes the range ambiguous rather than
+ * an assumed match.
  */
 function evaluateApplicability(
   range: StandardizedRange,
@@ -124,7 +115,7 @@ type Selection = {
   missingContext: "age" | "sex" | null;
 };
 
-/** Keeps only the most demographically specific ranges that apply. */
+/** Most demographically specific applicable ranges win. */
 function selectApplicable(
   ranges: StandardizedRange[],
   patient: PatientContext,
@@ -156,9 +147,8 @@ function selectApplicable(
 }
 
 /**
- * A value/range unit mismatch means the comparison would be meaningless. Ranges
- * frequently omit the unit (the report states it once next to the value), which
- * is treated as "same unit as the value" rather than as a conflict.
+ * A missing range unit means "same unit as the value" — reports usually print it
+ * once — so only a differing unit is a conflict.
  */
 function hasUnitConflict(
   valueUnit: string | null,
@@ -284,10 +274,7 @@ export function classifyBiomarker(input: ClassificationInput): ClassificationOut
   };
 }
 
-/**
- * Returns the single range to apply. When several equally specific ranges apply
- * they must agree about this value, otherwise the result is ambiguous.
- */
+/** Equally specific ranges must agree about this value, or it is ambiguous. */
 function pickSingle(
   ranges: StandardizedRange[],
   value: number,

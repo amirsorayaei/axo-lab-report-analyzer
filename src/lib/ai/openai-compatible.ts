@@ -15,22 +15,18 @@ export type OpenAiCompatibleOptions = {
   apiKey: string;
   baseUrl: string;
   model: string;
-  /** `null` sends no temperature field at all. */
+  /** `null` omits the field for models that reject it. */
   temperature: number | null;
   timeoutMs: number;
   maxRetries: number;
-  /** Optional OpenRouter attribution. Never required for a request to succeed. */
+  /** OpenRouter dashboard attribution only. */
   appUrl: string;
   appTitle: string;
-  /** Declared by configuration; see AI_SUPPORTS_IMAGES in .env.example. */
   supportsImages: boolean;
 };
 
-/**
- * OpenRouter accepts the OpenAI wire format plus a few extensions. They are
- * applied only when the base URL points at OpenRouter, so every other
- * OpenAI-compatible endpoint keeps receiving a plain, portable request body.
- */
+// OpenRouter-only extensions are gated on the host so every other
+// OpenAI-compatible endpoint receives a plain, portable body.
 function isOpenRouter(baseUrl: string): boolean {
   try {
     return new URL(baseUrl).hostname.endsWith("openrouter.ai");
@@ -39,13 +35,7 @@ function isOpenRouter(baseUrl: string): boolean {
   }
 }
 
-/**
- * Talks to any OpenAI-compatible `/chat/completions` endpoint (OpenAI, Azure
- * OpenAI gateways, Groq, Together, OpenRouter, vLLM, Ollama, a self-hosted
- * gateway). Everything provider-specific — the wire format, the structured
- * output flag, retry policy — is confined to this file; the rest of the app only
- * knows the `AiProvider` interface.
- */
+/** Keeps every provider-specific detail behind the `AiProvider` interface. */
 export class OpenAiCompatibleProvider implements AiProvider {
   readonly label: string;
   readonly mode = "live" as const;
@@ -59,22 +49,14 @@ export class OpenAiCompatibleProvider implements AiProvider {
   async extract({ inputs, signal }: ExtractionRequest): Promise<RawExtraction> {
     const body = {
       model: this.options.model,
-      // Deterministic transcription, not creative writing. `AI_TEMPERATURE=omit`
-      // drops the field entirely for reasoning models that reject it outright.
-      //
-      // No `seed` is sent. Support for it varies widely between models, and
-      // `provider.require_parameters` below makes every parameter in this body a
-      // hard routing requirement — so an unsupported `seed` leaves OpenRouter
-      // with no eligible provider and fails the whole request with a 404.
-      // Temperature is the portable determinism control; seed was only ever a
-      // best-effort hint on top of it.
+      // Omitted for models that reject `temperature`. Nothing else optional is
+      // sent either: under `require_parameters` every field narrows routing,
+      // and an unsupported one (e.g. `seed`) fails the request with a 404.
       ...(this.options.temperature !== null
         ? { temperature: this.options.temperature }
         : {}),
       messages: [
         { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
-        // Ordered multimodal content: one lead instruction, then labelled text
-        // and image blocks in exactly the order the user selected them.
         { role: "user", content: buildExtractionUserContent(inputs) },
       ],
       response_format: {
@@ -87,9 +69,8 @@ export class OpenAiCompatibleProvider implements AiProvider {
       },
       ...(isOpenRouter(this.options.baseUrl)
         ? {
-            // Route only to upstream providers that honour every parameter we
-            // send — above all `response_format`. Without this, OpenRouter may
-            // pick a provider that silently ignores the JSON schema.
+            // Without this, routing may pick an upstream that silently
+            // ignores `response_format`.
             provider: { require_parameters: true },
           }
         : {}),
@@ -110,9 +91,6 @@ export class OpenAiCompatibleProvider implements AiProvider {
         return await this.request(body, signal);
       } catch (error) {
         const appError = error instanceof AppError ? error : null;
-        // Transport failures, upstream 5xx and rate limits are worth replaying.
-        // A timeout, a bad key, exhausted credits, an unroutable request or an
-        // invalid response are not: retrying costs money and cannot help.
         if (!appError || !RETRYABLE.has(appError.code)) throw error;
         lastError = appError;
         if (attempt < this.options.maxRetries) {
@@ -131,8 +109,6 @@ export class OpenAiCompatibleProvider implements AiProvider {
     };
 
     if (isOpenRouter(this.options.baseUrl)) {
-      // Attribution only: these appear on the OpenRouter dashboard and are not
-      // needed for the call to succeed.
       headers["HTTP-Referer"] = this.options.appUrl;
       headers["X-Title"] = this.options.appTitle;
     }
@@ -145,16 +121,11 @@ export class OpenAiCompatibleProvider implements AiProvider {
     const onAbort = () => controller.abort();
     signal.addEventListener("abort", onAbort, { once: true });
 
-    /*
-     * The timeout has to cover the WHOLE exchange, not just the headers.
-     * `fetch` resolves as soon as response headers arrive, and OpenRouter
-     * answers 200 immediately while an upstream model is still queued or
-     * generating. Clearing the timer at that point would leave the body read
-     * unguarded, and a stalled body would hang the request forever.
-     */
+    // Must stay armed through the body read: `fetch` resolves on headers, and
+    // OpenRouter answers 200 while the model is still generating.
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
 
-    /** True when we aborted on our own timeout rather than the caller leaving. */
+    /** Our own timeout fired, rather than the caller leaving. */
     const timedOut = () => controller.signal.aborted && !signal.aborted;
 
     const timeoutError = () =>
@@ -180,20 +151,15 @@ export class OpenAiCompatibleProvider implements AiProvider {
       }
 
       if (!response.ok) {
-        // Discarded without being read: a provider may echo the prompt — and
-        // therefore report content — back inside an error payload. Cancelling
-        // rather than ignoring it releases the socket instead of leaking it.
+        // Never read: an error payload may echo the prompt, and therefore
+        // report content. Cancelling also releases the socket.
         await response.body?.cancel().catch(() => {});
-        // Mapped from the status code alone.
         throw errorForStatus(response.status);
       }
 
       try {
-        // Not `response.json()`. While an upstream model is still generating,
-        // OpenRouter keeps the connection alive by padding the body before the
-        // real payload — blank lines, and SSE-style `:` comment lines. Blank
-        // lines parse fine; a comment line makes `JSON.parse` throw, which
-        // surfaced as a sporadic AI_INVALID_RESPONSE on slower requests.
+        // Not `response.json()`: OpenRouter may prepend keep-alive padding
+        // while the model generates, and its `:` lines break `JSON.parse`.
         const payload: unknown = parseJsonWithKeepAlivePadding(await response.text());
         const content = readMessageContent(payload);
 
@@ -207,8 +173,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
         return content;
       } catch (error) {
         if (error instanceof AppError) throw error;
-        // A body that stalls mid-stream lands here once the timeout aborts it;
-        // anything else at this point is malformed JSON.
+        // A stalled body lands here once the timeout aborts it.
         if (timedOut()) throw timeoutError();
         throw new AppError("AI_INVALID_RESPONSE", "The AI provider did not return JSON.");
       }
@@ -242,12 +207,8 @@ export class OpenAiCompatibleProvider implements AiProvider {
 
 const RETRYABLE = new Set<ErrorCode>(["AI_REQUEST_FAILED", "AI_RATE_LIMITED"]);
 
-/**
- * Maps an upstream status to a typed error. OpenRouter answers 402 when the
- * account is out of credits, 429 when rate limited, and 404 when no provider
- * satisfies the requested parameters — which, given `require_parameters: true`,
- * means the chosen model has no endpoint supporting strict structured output.
- */
+// 404 means no upstream satisfies the requested parameters, which under
+// `require_parameters: true` usually means unsupported structured output.
 function errorForStatus(status: number): AppError {
   if (status === 401 || status === 403) {
     return new AppError("AI_MISCONFIGURED", "The AI provider rejected the credentials.", {
@@ -288,18 +249,12 @@ function issuePaths(issues: Array<{ path: PropertyKey[] }>): string[] {
   return issues.map((issue) => issue.path.map(String).join(".")).filter(Boolean);
 }
 
-/**
- * Parses a JSON body that may carry OpenRouter's keep-alive padding in front of
- * it: blank lines, and SSE-style comment lines beginning with `:`. Only leading
- * padding is skipped — the payload itself is parsed strictly, so a genuinely
- * malformed body still throws and is reported as AI_INVALID_RESPONSE.
- */
+/** Skips OpenRouter keep-alive padding (blank and SSE-style `:` lines). */
 function parseJsonWithKeepAlivePadding(raw: string): unknown {
   const start = raw.search(/[[{]/);
   if (start > 0) {
     const padding = raw.slice(0, start);
-    // Only skip padding that is entirely blank lines and `:` comment lines.
-    // Anything else means the body is not what we think it is.
+    // Strictly padding only, so a proxy error page still fails to parse.
     if (/^(?:\s*(?::[^\n]*)?\n)*\s*$/.test(padding)) {
       return JSON.parse(raw.slice(start));
     }

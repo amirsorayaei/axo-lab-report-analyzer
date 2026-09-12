@@ -1,17 +1,10 @@
 import { z } from "zod";
 
 /**
- * Two schema layers:
- *
- * 1. `RawExtraction*` — what the AI provider is allowed to return. It is pure
- *    transcription of what is printed on the report: original names, original
- *    values, original units, printed ranges. The model is never asked for a
- *    status, a converted value or a threshold.
- * 2. `Analysis*` — the deterministic output produced in TypeScript from the raw
- *    extraction (name standardization, unit standardization, classification).
- *
- * Keeping the layers separate is what makes classification auditable: the model
- * cannot influence a status except through the facts it transcribed.
+ * `RawExtraction*` is pure transcription of what the report prints; the model is
+ * never asked for a status, a converted value or a threshold. `Analysis*` is
+ * computed from it in TypeScript. Keeping the layers apart is what stops the
+ * model influencing a status except through the facts it transcribed.
  */
 
 export const SexSchema = z.enum(["male", "female"]);
@@ -19,18 +12,17 @@ export type Sex = z.infer<typeof SexSchema>;
 
 /** A single printed range, e.g. `[ 4,1 - 5,75 ]`, `[ < 200 ]`, `[ > 40 ]`. */
 export const RawRangeSchema = z.object({
-  /** Range exactly as printed on the report. Used for display and auditing. */
+  /** Exactly as printed, for display and auditing. */
   text: z.string().min(1),
   min: z.number().nullable(),
   max: z.number().nullable(),
-  /** `false` only when the report prints a strict `<` / `>` comparison. */
+  /** `false` only for a strict `<` / `>` printed on the report. */
   minInclusive: z.boolean(),
   maxInclusive: z.boolean(),
-  /** Unit the bounds are expressed in, when the report states one separately. */
   unit: z.string().nullable(),
-  /** Set only when the report explicitly scopes the range to one sex. */
+  // Set only where the report explicitly scopes the range; null means it
+  // applies to everyone, never "unknown".
   appliesToSex: SexSchema.nullable(),
-  /** Set only when the report explicitly scopes the range to an age window. */
   appliesToAgeMinYears: z.number().nullable(),
   appliesToAgeMaxYears: z.number().nullable(),
 });
@@ -38,41 +30,36 @@ export type RawRange = z.infer<typeof RawRangeSchema>;
 
 export const RawBiomarkerSchema = z.object({
   originalName: z.string().min(1),
-  /** Model's English suggestion. The TS dictionary takes precedence over it. */
+  /** Fallback only; the TS dictionary takes precedence. */
   standardizedNameSuggestion: z.string().nullable(),
-  /** Section heading on the report, e.g. "Metabolismo lipoproteíco (suero)". */
   panel: z.string().nullable(),
-  /** Result exactly as printed, including `<`, `>` or non-numeric results. */
+  /** Exactly as printed, including `<`, `>` and non-numeric results. */
   originalValue: z.string().min(1),
-  /** Parsed number when the printed value is numeric, otherwise null. */
+  /** Null for qualitative or censored values, which cannot be compared. */
   numericValue: z.number().nullable(),
   originalUnit: z.string().nullable(),
   referenceRanges: z.array(RawRangeSchema),
   optimalRanges: z.array(RawRangeSchema),
   /** 1-based page the result was read from. */
   sourcePage: z.number().int().positive(),
-  /** Model's self-reported transcription confidence. */
   confidence: z.number().min(0).max(1),
-  /** Report footnotes attached to this result, verbatim. */
   notes: z.string().nullable(),
 });
 export type RawBiomarker = z.infer<typeof RawBiomarkerSchema>;
 
 export const RawPatientSchema = z.object({
   ageYears: z.number().int().min(0).max(130).nullable(),
-  /** ISO `YYYY-MM-DD` when a date of birth is printed. */
+  /** ISO `YYYY-MM-DD`. */
   dateOfBirth: z.string().nullable(),
   sex: SexSchema.nullable(),
-  /** ISO `YYYY-MM-DD`. Used to derive age from date of birth. */
+  /** ISO `YYYY-MM-DD`. Reference date for deriving age. */
   reportDate: z.string().nullable(),
   collectionDate: z.string().nullable(),
   laboratoryName: z.string().nullable(),
   reportId: z.string().nullable(),
   /**
-   * Set by the model only when the uploaded sources clearly identify different
-   * people (different names, document numbers or dates of birth). Every source
-   * is supposed to be one part of one report for one patient, so this is the
-   * one channel the model has to report that the assumption is violated.
+   * The model's only channel for reporting that the sources are not one report
+   * for one patient — set when they name clearly different people.
    */
   conflictingSources: z.boolean(),
 });
@@ -81,14 +68,12 @@ export type RawPatient = z.infer<typeof RawPatientSchema>;
 export const RawExtractionSchema = z.object({
   patient: RawPatientSchema,
   biomarkers: z.array(RawBiomarkerSchema),
-  /** Detected report language as an ISO 639-1 code, when identifiable. */
+  /** ISO 639-1, when identifiable. */
   reportLanguage: z.string().nullable(),
 });
 export type RawExtraction = z.infer<typeof RawExtractionSchema>;
 
-// ---------------------------------------------------------------------------
 // Deterministic analysis output
-// ---------------------------------------------------------------------------
 
 export const BIOMARKER_STATUSES = [
   "optimal",
@@ -99,7 +84,7 @@ export const BIOMARKER_STATUSES = [
 export type BiomarkerStatus = (typeof BIOMARKER_STATUSES)[number];
 
 export type StandardizedRange = RawRange & {
-  /** Bounds after applying the unit-standardization factor. */
+  /** Bounds after the unit-standardization factor. */
   standardizedMin: number | null;
   standardizedMax: number | null;
   standardizedUnit: string | null;
@@ -109,7 +94,7 @@ export type AnalyzedBiomarker = {
   id: string;
   originalName: string;
   standardizedName: string;
-  /** Where `standardizedName` came from, for transparency in the UI. */
+  /** Surfaced in the UI so a renamed biomarker is traceable. */
   nameSource: "dictionary" | "model" | "original";
   panel: string | null;
   originalValue: string;
@@ -118,11 +103,11 @@ export type AnalyzedBiomarker = {
   standardizedValue: number | null;
   originalUnit: string | null;
   standardizedUnit: string | null;
-  /** True only when the unit change altered the magnitude of the value. */
+  /** True only when the magnitude actually changed. */
   conversionApplied: boolean;
   referenceRanges: StandardizedRange[];
   optimalRanges: StandardizedRange[];
-  /** The range actually used to decide the status, if any. */
+  /** The range the status was actually decided against. */
   appliedReferenceRange: StandardizedRange | null;
   appliedOptimalRange: StandardizedRange | null;
   status: BiomarkerStatus;
@@ -156,7 +141,7 @@ export type AnalysisSummary = {
 
 export type PatientSummary = {
   ageYears: number | null;
-  /** How age was obtained — derived ages are computed in TypeScript. */
+  /** `derived_from_dob` ages are computed in TypeScript, never by the model. */
   ageSource: "reported" | "derived_from_dob" | "unknown";
   sex: Sex | null;
   reportDate: string | null;
@@ -170,11 +155,10 @@ export type AnalysisResult = {
   reportLanguage: string | null;
   /** Total pages across every uploaded PDF. */
   pageCount: number;
-  /** What the analysis was built from, for display and auditing. */
   sources: ReportSourceSummary;
   biomarkers: AnalyzedBiomarker[];
   summary: AnalysisSummary;
-  /** `mock` renders a prominent demo-mode banner in the UI. */
+  /** `mock` renders the demo-mode banner; results must never look live. */
   providerMode: "mock" | "live";
   providerLabel: string;
 };

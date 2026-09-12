@@ -1,11 +1,7 @@
 import type { ErrorCode } from "@/lib/domain/errors";
 import type { AnalysisResult } from "@/lib/domain/schemas";
 
-/**
- * The single response shape of `POST /api/analyze`. Shared by the route handler
- * and the client, so an error is always a typed code rather than a string the UI
- * has to interpret.
- */
+/** Shared with the client, so an error is always a typed code, not a string. */
 export type AnalyzeSuccess = {
   ok: true;
   data: AnalysisResult;
