@@ -4,13 +4,8 @@ import type { LucideIcon } from "lucide-react";
 import type { BiomarkerStatus } from "@/lib/domain/schemas";
 
 /**
- * One place where a status becomes a label, an icon, a colour and an
- * explanation, so the badge, the summary counts and the detail panel can never
- * drift apart.
- *
- * Every status carries a written label AND a distinct icon shape. Colour is only
- * ever a third, reinforcing signal — the UI stays readable in greyscale and for
- * colour-blind users.
+ * Single source for a status's label, icon and colour, so the badge, counts and
+ * detail panel cannot drift. Colour is only ever a reinforcing third signal.
  */
 export const STATUS_PRESENTATION: Record<
   BiomarkerStatus,
@@ -77,10 +72,8 @@ export function formatFileSize(bytes: number): string {
 }
 
 /**
- * A result is only ever shown in the standardized unit when the value itself
- * could be standardized. A censored or qualitative result ("<0,2", "Positivo")
- * keeps its original unit, because pairing it with a converted unit would imply
- * a conversion that never happened.
+ * A censored or qualitative result ("<0,2", "Positivo") keeps its original unit:
+ * a converted unit would imply a conversion that never happened.
  */
 export function formatResult(biomarker: {
   standardizedValue: number | null;

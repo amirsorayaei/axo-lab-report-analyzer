@@ -1,11 +1,6 @@
 import { FlaskConical } from "lucide-react";
 
-/**
- * Shown whenever the mock provider produced the results. It must be impossible
- * to mistake fixture output for an analysis of the uploaded document, but it
- * should not outweigh the results themselves — so it is a single compact line
- * rather than a full alert block.
- */
+/** Fixture output must never be mistakable for an analysis of the upload. */
 export function DemoModeNotice({ providerLabel }: { providerLabel: string }) {
   return (
     <div className="flex items-start gap-2.5 rounded-lg border border-status-review/30 bg-status-review-surface px-3 py-2.5 text-sm text-status-review">

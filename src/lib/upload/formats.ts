@@ -1,10 +1,7 @@
 /**
- * Supported upload formats and limits.
- *
- * Shared by the client (for immediate feedback) and the server (which is the
- * only authority). Deliberately excluded: HEIC, SVG, GIF, DOCX. HEIC needs a
- * decoder most browsers do not have, SVG is an executable document format and a
- * genuine XSS/SSRF vector, and GIF and DOCX are not laboratory report formats.
+ * Shared by the client for fast feedback; the server is the only authority.
+ * SVG is excluded because it is an executable document format and an XSS/SSRF
+ * vector; HEIC needs a decoder most browsers lack.
  */
 
 export const MAX_FILES = 8;
@@ -15,12 +12,10 @@ export type SupportedFormat = "pdf" | "jpeg" | "png" | "webp";
 export type FormatDefinition = {
   format: SupportedFormat;
   label: string;
-  /** Lowercase extensions accepted for this format. */
   extensions: string[];
-  /** MIME types a browser may report. */
+  /** Types a browser may report; not authoritative. */
   mimeTypes: string[];
   kind: "pdf" | "image";
-  /** Canonical MIME type used when the file is handed to the AI provider. */
   canonicalMimeType: string;
 };
 
@@ -77,9 +72,8 @@ export function formatFromExtension(fileName: string): FormatDefinition | null {
 }
 
 /**
- * Identity used to reject duplicates. Name, size and type together, because two
- * genuinely different pages of one report can share a name or a size, but rarely
- * all three at once.
+ * Duplicate identity. All three fields together, because two different pages of
+ * one report can share a name or a size, but rarely all three.
  */
 export function fileIdentity(file: {
   name: string;

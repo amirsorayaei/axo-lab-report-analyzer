@@ -2,11 +2,8 @@ import "server-only";
 
 import type { ReportInput } from "@/lib/upload/report-input";
 
-/**
- * The model has exactly one job: transcribe what is printed. Anything that could
- * be decided deterministically (status, unit conversion, age arithmetic) is kept
- * out of the prompt on purpose.
- */
+// The model transcribes only. Anything decidable deterministically (status,
+// unit conversion, age arithmetic) is kept out of the prompt on purpose.
 export const EXTRACTION_SYSTEM_PROMPT = `You extract laboratory results from a laboratory report. The report may be supplied as extracted PDF text, as images of report pages, or as a mixture of both.
 
 You are a transcription tool, not a clinician.
@@ -34,7 +31,6 @@ Rules:
 11. Do not give medical advice, interpretation, diagnosis or recommendations anywhere in the output.
 12. Respond with JSON only, matching the requested schema exactly. No prose, no markdown fences.`;
 
-/** One entry of an OpenAI-style multimodal `content` array. */
 export type UserContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
@@ -42,20 +38,16 @@ export type UserContentPart =
 const LEAD_INSTRUCTION = `The laboratory report below is supplied as ${"{n}"} ordered source(s). Read all of them as one report for one patient, then return the extraction as JSON matching the required schema.`;
 
 /**
- * Builds the ordered multimodal user message.
- *
- * Order is the contract: sources appear in exactly the order the user selected,
- * every block is labelled with its source index and file name, and each image is
- * introduced by a text block immediately before it so the model can attribute a
- * page number to what it is looking at.
+ * Order is the contract: blocks appear exactly as the user arranged them, each
+ * labelled, and every image is preceded by a text block so the model can
+ * attribute a page number to what it is looking at.
  */
 export function buildExtractionUserContent(inputs: ReportInput[]): UserContentPart[] {
   const parts: UserContentPart[] = [
     { type: "text", text: LEAD_INSTRUCTION.replace("{n}", String(inputs.length)) },
   ];
 
-  // Page numbers run continuously across every source so `sourcePage` stays a
-  // single, unambiguous number in the flat extraction schema.
+  // Continuous across sources, so `sourcePage` stays unambiguous.
   let pageCursor = 0;
 
   for (const input of inputs) {
@@ -81,7 +73,7 @@ export function buildExtractionUserContent(inputs: ReportInput[]): UserContentPa
   return parts;
 }
 
-/** Plain-text rendering for providers that take a single string. */
+/** For providers that take a single string instead of content parts. */
 export function buildExtractionUserPrompt(inputs: ReportInput[]): string {
   return buildExtractionUserContent(inputs)
     .map((part) => (part.type === "text" ? part.text : "[image omitted]"))
@@ -89,9 +81,8 @@ export function buildExtractionUserPrompt(inputs: ReportInput[]): string {
 }
 
 /**
- * JSON Schema mirror of `RawExtractionSchema`, sent to providers that support
- * structured output. The Zod schema remains the authority: whatever comes back
- * is validated against it regardless of what the provider promised.
+ * Mirror of `RawExtractionSchema` for structured output. Zod remains the
+ * authority: the response is validated regardless of what the provider promised.
  */
 export const EXTRACTION_JSON_SCHEMA = {
   type: "object",

@@ -14,11 +14,7 @@ import {
 } from "@/lib/upload/formats";
 import { formatFileSize } from "@/lib/status-presentation";
 
-/**
- * The ordered selection. Order is meaningful — it is the page order sent to the
- * model — so every row shows its position, and files are appended rather than
- * replaced when more are added.
- */
+/** Order is the page order sent to the model, so every row shows its position. */
 export function SelectedFilesList({
   files,
   onAdd,
@@ -123,7 +119,6 @@ export function SelectedFilesList({
           </p>
         ) : null}
 
-        {/* Primary action first and dominant; the two secondary actions sit apart. */}
         <div className="space-y-3 border-t pt-4">
           <Button
             type="button"

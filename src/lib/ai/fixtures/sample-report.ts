@@ -1,15 +1,12 @@
 import type { RawExtraction, RawRange } from "@/lib/domain/schemas";
 
 /**
- * Demo fixture, transcribed by hand from the sample report supplied with the
- * challenge and from nothing else. It is the exact shape a real provider must
- * return, so the deterministic pipeline behind it is exercised end to end.
+ * Transcribed by hand from the supplied sample report and nothing else.
  *
- * Note on the lipid panel: the report prints cardiovascular-risk target values
- * under "Colesterol no HDL" and "Colesterol LDL" and explicitly calls them
- * recommended values, so they are transcribed as optimal ranges. The report does
- * not assign a risk category to this patient, which is exactly the ambiguity the
- * classifier is designed to surface rather than resolve.
+ * The lipid panel prints cardiovascular-risk targets the report itself calls
+ * recommended, so they are transcribed as optimal ranges. No risk category is
+ * assigned to this patient — the ambiguity the classifier surfaces rather than
+ * resolves.
  */
 
 function range(
@@ -64,7 +61,7 @@ type FixtureRow = {
 };
 
 const ROWS: FixtureRow[] = [
-  // ---- Page 1: Hemograma -------------------------------------------------
+  // Page 1: Hemograma
   { name: "Hematíes", panel: "Hemograma · Serie eritrocitaria", value: "4,73", numeric: 4.73, unit: "x10⁶/mm³", reference: [closed(4.1, 5.75)], page: 1 },
   { name: "Hemoglobina", panel: "Hemograma · Serie eritrocitaria", value: "13,9", numeric: 13.9, unit: "g/dL", reference: [closed(12.5, 17.2)], page: 1 },
   { name: "Hematocrito", panel: "Hemograma · Serie eritrocitaria", value: "42,6", numeric: 42.6, unit: "%", reference: [closed(36.5, 50.5)], page: 1 },
@@ -92,7 +89,7 @@ const ROWS: FixtureRow[] = [
   { name: "Grupo sanguíneo", panel: "Inmunohematología", value: "A", numeric: null, unit: null, page: 1, confidence: 0.97 },
   { name: "Factor Rh (D)", panel: "Inmunohematología", value: "Positivo", numeric: null, unit: null, page: 1, confidence: 0.97 },
 
-  // ---- Page 2: Bioquímica ------------------------------------------------
+  // Page 2: Bioquímica
   { name: "Glucosa (suero/plasma)", panel: "Metabolismo hidrocarbonado (suero/plasma)", value: "99", numeric: 99, unit: "mg/dL", reference: [closed(74, 106)], page: 2 },
   {
     name: "Hemoglobina A1c (NGSP) por HPLC",
@@ -155,7 +152,7 @@ const ROWS: FixtureRow[] = [
 export const SAMPLE_REPORT_EXTRACTION: RawExtraction = {
   reportLanguage: "es",
   patient: {
-    // The report prints a date of birth, not an age. Age is derived in TypeScript.
+    // The report prints a date of birth, not an age.
     ageYears: null,
     dateOfBirth: "1978-02-13",
     sex: "male",

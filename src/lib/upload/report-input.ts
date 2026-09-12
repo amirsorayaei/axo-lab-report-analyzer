@@ -1,11 +1,8 @@
 import type { PdfPage } from "@/lib/pdf/extract";
 
 /**
- * The normalized, ordered representation of everything the user uploaded.
- *
- * `sourceIndex` is the 1-based position the user chose, and it is the only
- * ordering that matters downstream: the prompt labels blocks with it and the
- * model is told the sources are consecutive parts of one report.
+ * `sourceIndex` is the 1-based position the user chose and the only ordering
+ * that matters downstream — the prompt labels every block with it.
  */
 export type ReportInput =
   | {
@@ -19,7 +16,7 @@ export type ReportInput =
       sourceIndex: number;
       fileName: string;
       mimeType: "image/jpeg" | "image/png" | "image/webp";
-      /** `data:<mime>;base64,...`. Never logged, never persisted. */
+      /** Never logged, never persisted. */
       dataUrl: string;
     };
 
@@ -33,7 +30,6 @@ export type ReportInputStats = {
     sourceIndex: number;
     fileName: string;
     kind: "text" | "image";
-    /** Page count for PDFs, `null` for images. */
     pageCount: number | null;
   }>;
 };

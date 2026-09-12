@@ -3,10 +3,7 @@ import { STATUS_PRESENTATION } from "@/lib/status-presentation";
 import { cn } from "@/lib/utils";
 import type { BiomarkerStatus } from "@/lib/domain/schemas";
 
-/**
- * Status is communicated three ways at once — icon shape, written label and
- * colour — so it never depends on colour alone.
- */
+/** Icon shape and label carry the status, so it never depends on colour. */
 export function StatusBadge({
   status,
   className,

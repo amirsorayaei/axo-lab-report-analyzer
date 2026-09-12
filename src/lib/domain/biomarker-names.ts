@@ -1,9 +1,6 @@
 /**
- * Deterministic biomarker name standardization (Spanish/English -> English).
- *
- * The dictionary is the source of truth. The model's own suggestion is only a
- * fallback, and the original name is the last resort — the UI always shows the
- * original name alongside, so nothing is ever silently rewritten.
+ * The dictionary is authoritative; the model's suggestion is only a fallback.
+ * The UI always shows the original name too, so nothing is silently rewritten.
  */
 
 export type NameStandardization = {
@@ -11,7 +8,7 @@ export type NameStandardization = {
   source: "dictionary" | "model" | "original";
 };
 
-/** Lowercase, accent-free, punctuation-free key. `%` is kept: it is meaningful. */
+/** `%` is kept: it distinguishes e.g. Neutrophils % from the absolute count. */
 export function normalizeNameKey(name: string): string {
   return name
     .normalize("NFD")

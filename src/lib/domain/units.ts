@@ -1,45 +1,25 @@
 /**
- * Deterministic unit standardization.
+ * Classification is invariant under this step: the factor is applied to the
+ * value AND to every range bound, so a conversion can never change a status.
  *
- * Design decision: classification is invariant under this step. Every unit maps
- * to a canonical symbol plus a linear factor, and the factor is applied to the
- * value AND to every range bound together. A biomarker therefore never changes
- * status because of a conversion — the conversion exists so the UI can show one
- * consistent unit vocabulary.
- *
- * Most entries are notation aliases with a factor of 1 (`x10³/mm³` and `10^3/µL`
- * are the same quantity, because 1 mm³ = 1 µL). Magnitude-changing factors are
- * limited to rescalings within one mass-concentration family where the target is
- * unambiguously the conventional unit.
- *
- * Two conversions are deliberately NOT implemented:
- *   - molar conversions (mg/dL <-> mmol/L) need an analyte-specific molar mass,
- *     which is medical knowledge this app is not allowed to invent;
- *   - rescalings where both units are conventional for different analytes
- *     (mg/L and mg/dL, g/L and g/dL) would only trade one familiar unit for
- *     another and are left alone.
- * Such units pass through unchanged and stay classifiable against their own
- * printed range.
+ * Molar conversions (mg/dL <-> mmol/L) are deliberately absent — they need an
+ * analyte-specific molar mass, which is medical knowledge this app must not
+ * invent. Unrecognised units pass through unchanged and stay classifiable
+ * against their own printed range.
  */
 
 export type UnitStandardization = {
-  /** Canonical symbol used for display. Null when no unit was provided. */
   standardizedUnit: string | null;
-  /** Multiply the original value and range bounds by this to reach the unit. */
+  /** Applied to the value and to every range bound alike. */
   factor: number;
-  /** True only when `factor !== 1`, i.e. the magnitude actually changed. */
   conversionApplied: boolean;
-  /** True when the original unit was recognised by the table. */
   recognized: boolean;
 };
 
 type UnitDef = { canonical: string; factor: number };
 
-/**
- * Keys are normalized alias forms (see `normalizeUnitKey`). Factor 1 entries are
- * notation-only aliases: `x10³/mm³` and `10^3/µL` are exactly the same quantity
- * because 1 mm³ = 1 µL.
- */
+// Keys are normalized alias forms (see `normalizeUnitKey`). Factor 1 entries
+// are notation-only aliases: `x10³/mm³` is `10^3/µL`, since 1 mm³ = 1 µL.
 const UNIT_TABLE: Record<string, UnitDef> = {
   // Counts per volume
   "10^3/mm3": { canonical: "10^3/µL", factor: 1 },
@@ -78,7 +58,7 @@ const UNIT_TABLE: Record<string, UnitDef> = {
   "ui/ml": { canonical: "IU/mL", factor: 1 },
   "iu/ml": { canonical: "IU/mL", factor: 1 },
 
-  // Molar and ratio units — passed through, never converted across families
+  // Molar and ratio units — never converted across families
   "mmol/l": { canonical: "mmol/L", factor: 1 },
   "umol/l": { canonical: "µmol/L", factor: 1 },
   "nmol/l": { canonical: "nmol/L", factor: 1 },
@@ -112,7 +92,7 @@ const SUPERSCRIPTS: Record<string, string> = {
   "⁹": "9",
 };
 
-/** Collapses the many printed spellings of the same unit into one lookup key. */
+/** Collapses the many printed spellings of one unit into a single key. */
 export function normalizeUnitKey(unit: string): string {
   return unit
     .trim()
@@ -141,7 +121,7 @@ export function standardizeUnit(originalUnit: string | null): UnitStandardizatio
   const def = UNIT_TABLE[key];
 
   if (!def) {
-    // Unknown units are preserved verbatim rather than guessed at.
+    // Preserved verbatim rather than guessed at.
     return {
       standardizedUnit: originalUnit.trim(),
       factor: 1,
@@ -158,7 +138,7 @@ export function standardizeUnit(originalUnit: string | null): UnitStandardizatio
   };
 }
 
-/** Applies the standardization factor, keeping float noise out of the UI. */
+/** `toPrecision` keeps float noise out of the UI. */
 export function applyFactor(value: number | null, factor: number): number | null {
   if (value === null) return null;
   if (factor === 1) return value;

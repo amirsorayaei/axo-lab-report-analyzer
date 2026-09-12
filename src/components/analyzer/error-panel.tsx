@@ -21,11 +21,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import type { ErrorCode } from "@/lib/domain/errors";
 
-/**
- * Every typed error code gets a human title, an icon and a next step. Codes are
- * shown too, so a user can quote one in a support request without pasting any
- * report content.
- */
+/** The code is shown so a user can quote it without pasting report content. */
 const PRESENTATION: Record<ErrorCode, { title: string; icon: LucideIcon; action: string }> =
   {
     NO_FILES: {

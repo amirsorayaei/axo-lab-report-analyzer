@@ -3,12 +3,9 @@ import "server-only";
 import { AppError } from "@/lib/domain/errors";
 
 /**
- * Server-side PDF text extraction with pdfjs-dist.
- *
- * The `legacy` build is used because it targets plain Node without a DOM. Text
- * is reconstructed line by line so column layout survives: laboratory reports
- * put the biomarker name, the value, the unit and the range on one visual row,
- * and losing that grouping makes the text unusable for extraction.
+ * The `legacy` build targets plain Node without a DOM. Text is reconstructed
+ * into visual rows because lab reports put the name, value, unit and range on
+ * one row, and losing that grouping pairs values with the wrong range.
  */
 
 export type PdfPage = {
@@ -44,8 +41,7 @@ export async function extractPdfText(
     data: new Uint8Array(bytes),
     useSystemFonts: false,
     disableFontFace: true,
-    // Font substitution warnings are irrelevant for text extraction and would
-    // otherwise write report-derived noise into server logs.
+    // Font warnings would write report-derived text into server logs.
     verbosity: 0,
   });
 
@@ -94,14 +90,13 @@ export async function extractPdfText(
 }
 
 /**
- * Groups text items into visual rows by their y coordinate, then orders each row
- * left to right. A horizontal gap wider than a space becomes padded whitespace so
- * that column boundaries remain visible to the model.
+ * Groups items into visual rows by y, orders each row left to right, and pads
+ * wide horizontal gaps so column boundaries stay visible to the model.
  */
 function reconstructLines(items: TextItemLike[]): string {
-  /** Baseline drift tolerated between two neighbouring items of one row. */
+  /** Baseline drift tolerated between neighbouring items of one row. */
   const STEP_TOLERANCE = 2.5;
-  /** Total baseline span a single row may cover, roughly one text height. */
+  /** Total baseline span one row may cover, roughly one text height. */
   const ROW_SPAN = 6.5;
 
   const positioned = items
@@ -119,10 +114,9 @@ function reconstructLines(items: TextItemLike[]): string {
   type Row = { top: number; last: number; items: typeof positioned };
   const rows: Row[] = [];
 
-  // Laboratory reports print the value, the unit and the range a couple of
-  // points above the biomarker name they belong to. Grouping against the
-  // previous item (rather than the first item of the row) follows that drift,
-  // while ROW_SPAN stops the chain from swallowing the next row.
+  // Labs print the value a couple of points above the name it belongs to, so
+  // each item is compared against the previous one rather than the row start;
+  // ROW_SPAN stops that chain swallowing the next row.
   for (const item of positioned) {
     const row = rows.at(-1);
     const sameRow =
@@ -147,7 +141,7 @@ function reconstructLines(items: TextItemLike[]): string {
       for (const item of ordered) {
         const gap = item.x - cursorX;
         if (line !== "" && gap > 1) {
-          // ~4pt per character at the font sizes used by lab reports.
+          // ~4pt per character at the font sizes lab reports use.
           line += " ".repeat(Math.min(Math.max(Math.round(gap / 4), 1), 12));
         }
         line += item.text;

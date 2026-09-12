@@ -44,7 +44,6 @@ export function ResultsView({
             Classified against the ranges printed on your report.
           </p>
         </div>
-        {/* Secondary to the heading: never full-width, even on small screens. */}
         <Button
           type="button"
           variant="outline"

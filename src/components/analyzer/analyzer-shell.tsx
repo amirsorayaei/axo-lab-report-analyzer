@@ -22,10 +22,7 @@ type ViewState =
   | { name: "error"; code: ErrorCode; message: string; hint?: string }
   | { name: "results"; result: AnalysisResult };
 
-/**
- * Client state machine for the whole flow. The ordered file collection is held
- * in memory only for the duration of the request and never written anywhere.
- */
+/** Files are held in memory for the request only, never written anywhere. */
 export function AnalyzerShell({
   maxUploadMb,
   maxTotalMb,
@@ -42,10 +39,7 @@ export function AnalyzerShell({
     timers.current = [];
   }, []);
 
-  /**
-   * Appends rather than replaces, skips exact duplicates, and stops at the file
-   * limit. The server re-checks all three — this is only for fast feedback.
-   */
+  /** Client-side dedupe and limit checks; the server validates again. */
   const addFiles = useCallback((incoming: File[]) => {
     setFiles((current) => {
       const seen = new Set(current.map(fileIdentity));
@@ -77,10 +71,8 @@ export function AnalyzerShell({
       clearTimers();
       setView({ name: "processing", stage: "validating" });
 
-      // The stage list mirrors what the server actually does, in order. The
-      // client cannot observe server-side progress, so the transitions are
-      // time-based estimates and the last stage stays busy until the real
-      // response arrives — nothing is ever reported as finished.
+      // Server progress is not observable, so these are timed estimates and
+      // the last stage stays busy until the response actually arrives.
       const advance = (stage: ProcessingStageId, delay: number) => {
         timers.current.push(
           setTimeout(() => {

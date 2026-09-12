@@ -8,9 +8,8 @@ import { AppError } from "@/lib/domain/errors";
 import type { AiProvider } from "@/lib/ai/types";
 
 /**
- * Resolves the provider from the environment. There is deliberately no fallback
- * path: a misconfigured live provider fails with AI_MISCONFIGURED rather than
- * quietly serving fixture data.
+ * No fallback path on purpose: a misconfigured live provider fails with
+ * AI_MISCONFIGURED rather than quietly serving fixture data.
  */
 export function getAiProvider(): AiProvider {
   const config = getServerConfig();

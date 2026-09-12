@@ -14,9 +14,8 @@ import type {
 } from "@/lib/domain/schemas";
 
 /**
- * Turns a validated raw extraction into the final analysis. Everything in this
- * module is pure and deterministic: the same extraction always yields the same
- * statuses, independently of which AI provider produced it.
+ * Pure and deterministic: the same extraction always yields the same statuses,
+ * whichever provider produced it.
  */
 export function analyzeExtraction(
   extraction: RawExtraction,
@@ -53,8 +52,7 @@ function analyzeBiomarker(
   const name = standardizeBiomarkerName(raw.originalName, raw.standardizedNameSuggestion);
   const unit = standardizeUnit(raw.originalUnit);
 
-  // The same factor is applied to the value and to every bound, so the unit step
-  // can never change a status — see the note in `units.ts`.
+  // Same factor on the value and every bound, so this cannot change a status.
   const standardizedValue = applyFactor(raw.numericValue, unit.factor);
   const referenceRanges = raw.referenceRanges.map((range) =>
     standardizeRange(range, unit.factor, unit.standardizedUnit),
@@ -96,10 +94,7 @@ function analyzeBiomarker(
   };
 }
 
-/**
- * Ranges printed without their own unit are assumed to be in the unit of the
- * result, which is how laboratory reports are laid out.
- */
+/** A range printed without a unit is in the unit of the result. */
 function standardizeRange(
   range: RawRange,
   factor: number,
@@ -139,10 +134,7 @@ function buildPatientSummary(extraction: RawExtraction): PatientSummary {
   };
 }
 
-/**
- * Age is computed here rather than asked of the model: given a date of birth and
- * a report date it is arithmetic, not inference.
- */
+/** Computed here, not asked of the model: this is arithmetic, not inference. */
 export function deriveAgeYears(
   dateOfBirth: string | null,
   referenceDate: string | null,
